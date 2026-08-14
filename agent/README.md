@@ -38,6 +38,15 @@ kiosk-agent service install \
 - `service install`, `uninstall`, `show-unit`, `status`, `start`, `stop`,
   `restart`, `enable`, `disable`, `logs`, and `doctor` manage systemd.
 
+`doctor` detects Wayland before X11. For Wayland, set
+`WAYLAND_DISPLAY` and `XDG_RUNTIME_DIR`; for X11, set `DISPLAY`:
+
+```shell
+WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 \
+  kiosk-agent doctor
+DISPLAY=:0 kiosk-agent doctor
+```
+
 User services are default. Graphical autologin starts user services after boot;
 linger is optional. `--scope system` is available for setups that manage a
 separate kiosk user explicitly.

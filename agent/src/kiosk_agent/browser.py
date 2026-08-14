@@ -1,5 +1,6 @@
 import contextlib
 import json
+import os
 import shutil
 import subprocess
 import time
@@ -9,6 +10,8 @@ from urllib.parse import urlparse
 import httpx
 import websocket
 from attrs import define, field
+
+from .display import detect_display_backend, runtime_directory
 
 
 class BrowserError(RuntimeError):
@@ -78,19 +81,33 @@ class BrowserController:
         if host not in {"127.0.0.1", "localhost", "::1"}:
             raise BrowserError("launched Chrome CDP must use localhost")
         port = parsed.port or 9222
-        command = [
-            browser,
-            "--kiosk",
-            "--noerrdialogs",
-            "--disable-infobars",
-            "--disable-session-crashed-bubble",
-            "--no-first-run",
-            "--start-maximized",
-            f"--remote-debugging-address={host}",
-            f"--remote-debugging-port={port}",
-            f"--user-data-dir={self.profile_dir}",
-            "about:blank",
-        ]
+        origin_host = parsed.netloc or f"{host}:{port}"
+        origin = f"{parsed.scheme or 'http'}://{origin_host}"
+        command = [browser]
+        display_backend = detect_display_backend()
+        environment = os.environ.copy()
+        if display_backend:
+            command.append(f"--ozone-platform={display_backend}")
+            if display_backend == "wayland":
+                environment.setdefault(
+                    "XDG_RUNTIME_DIR", runtime_directory(environment)
+                )
+        command.extend(
+            [
+                "--kiosk",
+                "--noerrdialogs",
+                "--disable-infobars",
+                "--disable-session-crashed-bubble",
+                "--no-first-run",
+                "--start-maximized",
+                f"--remote-debugging-address={host}",
+                f"--remote-debugging-port={port}",
+                f"--remote-allow-origins={origin}",
+                "--password-store=basic",
+                f"--user-data-dir={self.profile_dir}",
+                "about:blank",
+            ]
+        )
         try:
             self._process = subprocess.Popen(  # noqa: S603
                 command,
@@ -98,6 +115,7 @@ class BrowserController:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
+                env=environment,
             )
         except OSError as exc:
             raise BrowserError(f"could not launch browser: {exc}") from exc

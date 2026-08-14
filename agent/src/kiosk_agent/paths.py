@@ -18,6 +18,10 @@ class AgentPaths:
     profile: Path
 
 
+def get_runtime_dir() -> Path:
+    return PlatformDirs(appname=None, appauthor=False).user_runtime_path
+
+
 def get_paths() -> AgentPaths:
     dirs = PlatformDirs(APP_NAME, appauthor=False)
     return AgentPaths(

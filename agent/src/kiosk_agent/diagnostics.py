@@ -1,5 +1,4 @@
 import getpass
-import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -9,6 +8,7 @@ from attrs import define
 
 from .api import ManagerClient, ManagerError
 from .browser import BrowserError, find_browser
+from .display import display_environment_detail, display_environment_ready
 from .paths import ephemeral_runtime_reason, get_paths
 from .service import SERVICE_NAME
 
@@ -68,7 +68,15 @@ def _graphical_session_check() -> CheckResult:
         check=False,
     )
     detail = (result.stdout or result.stderr).strip() or "inactive"
-    return _result("graphical session", result.returncode == 0, detail)
+    if result.returncode == 0:
+        return _result("graphical session", True, detail)
+    if display_environment_ready():
+        return _warning(
+            "graphical session",
+            f"{detail}; display environment detected: "
+            f"{display_environment_detail()}",
+        )
+    return _result("graphical session", False, detail)
 
 
 def _linger_check() -> CheckResult:
@@ -153,12 +161,11 @@ def run_checks(
     else:
         results.append(_result("Chromium", True, browser_path))
 
-    display = os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
     results.append(
         _result(
             "graphical display",
-            bool(display),
-            display or "DISPLAY/WAYLAND_DISPLAY not set",
+            display_environment_ready(),
+            display_environment_detail(),
         )
     )
 

@@ -5,6 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from .display import runtime_directory
 from .paths import APP_NAME, ephemeral_runtime_reason
 
 SERVICE_NAME = "kiosk-agent.service"
@@ -187,5 +188,5 @@ def current_display_environment() -> dict[str, str | None]:
     return {
         "display": os.environ.get("DISPLAY"),
         "wayland_display": os.environ.get("WAYLAND_DISPLAY"),
-        "runtime_dir": os.environ.get("XDG_RUNTIME_DIR"),
+        "runtime_dir": runtime_directory(),
     }
