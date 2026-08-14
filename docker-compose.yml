@@ -1,0 +1,59 @@
+x-app: &app
+  build:
+    context: .
+    dockerfile: Dockerfile.dev
+  env_file:
+    - .env
+  volumes:
+    - .:/app:rw
+    - ./.artifacts/staticfiles:/app/staticfiles:rw
+    - virtualenv:/app/.venv
+    - uv-cache:/root/.cache/uv
+  depends_on:
+    db:
+      condition: service_healthy
+
+services:
+  web:
+    <<: *app
+    command: >-
+      uv run uvicorn kiosk_manager.asgi:application --host 0.0.0.0
+      --port 80 --reload
+    environment:
+      VIRTUAL_HOST: dashboards.local.aldryn.net
+      PORT: 80
+
+  test:
+    <<: *app
+    command: uv run pytest
+    environment:
+      STAGE: test
+      SECURE_SSL_REDIRECT: "false"
+      SECURE_COOKIES: "false"
+    profiles:
+      - tools
+
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: kiosk_manager
+      POSTGRES_HOST_AUTH_METHOD: trust
+      SERVICE_MANAGER: fsm-postgres
+    volumes:
+      - ".:/app:rw"
+      - postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d kiosk_manager"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+networks:
+  default:
+    name: divio-local-lb
+    external: true
+
+volumes:
+  postgres:
+  uv-cache:
+  virtualenv:

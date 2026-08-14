@@ -1,0 +1,94 @@
+[project]
+name = "kiosk-manager"
+version = "0.1.0"
+description = "Django kiosk screen manager"
+requires-python = ">=3.14"
+dependencies = [
+  "django>=6,<7",
+  "django-adminutils",
+  "django-ninja>=1.3,<2",
+  "dj-database-url",
+  "psycopg[binary,pool]>=3.2",
+  "sentry-sdk[django]>=2.0",
+  "uvicorn",
+  "whitenoise[brotli]",
+]
+
+[dependency-groups]
+lint = ["pyright", "ruff"]
+test = ["django-coverage-plugin", "pytest", "pytest-cov", "pytest-django"]
+dev = [{ include-group = "lint" }, { include-group = "test" }]
+
+[tool.pyright]
+include = ["kiosk_manager", "manage.py"]
+exclude = ["**/migrations/**", ".venv", "staticfiles"]
+pythonVersion = "3.14"
+typeCheckingMode = "off"
+reportUndefinedVariable = "error"
+reportUnboundVariable = "error"
+reportPossiblyUnboundVariable = "warning"
+reportPrivateUsage = "warning"
+reportUnusedImport = "warning"
+reportUnusedVariable = "none"
+reportMissingImports = "warning"
+venvPath = "."
+venv = ".venv"
+extraPaths = ["."]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "kiosk_manager.settings"
+addopts = "--reuse-db --strict-markers"
+python_files = ["test_*.py"]
+testpaths = ["kiosk_manager"]
+
+[tool.coverage.run]
+branch = true
+source = ["kiosk_manager"]
+omit = ["*/migrations/*"]
+plugins = ["django_coverage_plugin"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+line-length = 79
+target-version = "py314"
+
+[tool.ruff.lint]
+select = [
+  "B",
+  "C4",
+  "DJ",
+  "E",
+  "F",
+  "I",
+  "PERF",
+  "PGH",
+  "PIE",
+  "PT",
+  "RUF",
+  "S",
+  "SIM",
+  "UP",
+  "W",
+]
+ignore = ["E501", "S101", "RUF012"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/migrations/*.py" = ["RUF012"]
+"**/models.py" = ["RUF012"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["kiosk_manager"]
+section-order = [
+  "future",
+  "standard-library",
+  "django",
+  "third-party",
+  "first-party",
+  "local-folder",
+]
+
+[tool.ruff.lint.isort.sections]
+django = ["django"]
