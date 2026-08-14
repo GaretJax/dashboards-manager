@@ -1,0 +1,181 @@
+name: Build, publish, and deploy production image
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: production-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: kiosk_manager
+          POSTGRES_USER: kiosk_manager
+          POSTGRES_PASSWORD: kiosk_manager
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kiosk_manager -d kiosk_manager"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SECRET_KEY: ci-secret-key
+      STAGE: test
+      DEBUG: "true"
+      SECURE_COOKIES: "false"
+      COVERAGE_CORE: ctrace
+      DJANGO_ALLOWED_HOSTS: localhost
+      DEFAULT_DATABASE_DSN: >-
+        postgresql://kiosk_manager:kiosk_manager@localhost:5432/kiosk_manager
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build test image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          target: test
+          load: true
+          tags: dashboards-manager:ci
+          cache-from: |
+            type=gha,scope=ci-test-image
+            type=gha,scope=production-image
+          cache-to: type=gha,scope=ci-test-image,mode=max
+
+      - name: Run tests inside the image
+        run: |
+          docker run --rm --network host \
+            -e SECRET_KEY=ci-secret-key \
+            -e STAGE=test \
+            -e DEBUG=true \
+            -e SECURE_COOKIES=false \
+            -e COVERAGE_CORE=ctrace \
+            -e DJANGO_ALLOWED_HOSTS=localhost \
+            -e DEFAULT_DATABASE_DSN="$DEFAULT_DATABASE_DSN" \
+            dashboards-manager:ci
+
+  docker:
+    name: Publish to GitHub Container Registry
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Normalize image name
+        id: image
+        shell: bash
+        run: echo "name=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image metadata
+        id: metadata
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ steps.image.outputs.name }}
+          tags: |
+            type=raw,value=latest
+            type=sha,format=long,prefix=sha-
+
+      - name: Build and push production image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          push: ${{ github.event_name == 'push' }}
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          cache-from: |
+            type=gha,scope=production-image
+            type=gha,scope=ci-test-image
+          cache-to: type=gha,scope=production-image,mode=max
+
+  divio:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    name: Deploy to Divio
+    needs: docker
+    runs-on: ubuntu-latest
+    environment:
+      name: live
+      url: https://${{ vars.BACKEND_DOMAIN }}
+    permissions:
+      contents: read
+    env:
+      DIVIO_CLI_VERSION: 4.0.5
+      DIVIO_VENV: ${{ github.workspace }}/.cache/divio-cli
+
+    steps:
+      - name: Set up Python
+        id: python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Restore Divio CLI
+        id: divio-cli-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.DIVIO_VENV }}
+          key: divio-${{ runner.os }}-${{ env.DIVIO_CLI_VERSION }}
+
+      - name: Install Divio CLI
+        if: steps.divio-cli-cache.outputs.cache-hit != 'true'
+        run: |
+          python -m venv "$DIVIO_VENV"
+          "$DIVIO_VENV/bin/python" -m pip install \
+            --disable-pip-version-check \
+            "divio-cli==$DIVIO_CLI_VERSION"
+
+      - name: Add Divio CLI to PATH
+        run: echo "$DIVIO_VENV/bin" >> "$GITHUB_PATH"
+
+      - name: Log in to Divio
+        run: divio login "$DEPLOY_TOKEN"
+        env:
+          DEPLOY_TOKEN: ${{ secrets.DIVIO_DEPLOY_TOKEN }}
+
+      - name: Validate Divio application ID
+        run: |
+          if [ -z "$APP_ID" ]; then
+            echo "::error::DIVIO_APP_UUID is not configured"
+            echo "Set DIVIO_APP_UUID in live GitHub environment"
+            exit 1
+          fi
+        env:
+          APP_ID: ${{ vars.DIVIO_APP_UUID }}
+
+      - name: Deploy to Divio
+        run: divio app deploy --remote-id="$APP_ID" live
+        env:
+          APP_ID: ${{ vars.DIVIO_APP_UUID }}

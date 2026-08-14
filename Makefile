@@ -18,7 +18,7 @@ test:
 	docker compose run --rm test
 
 migrate:
-	docker compose run --rm web uv run python manage.py migrate
+	docker compose run --rm web python manage.py migrate
 
 agent-check:
 	uv run --project agent --directory agent ruff format --check

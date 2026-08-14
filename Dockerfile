@@ -10,7 +10,8 @@ FROM python:${PYTHON_VERSION}-slim AS dependencies
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy
+    UV_LINK_MODE=copy \
+    PATH=/app/.venv/bin:$PATH
 WORKDIR /app
 
 COPY --from=uv /uv /uvx /bin/
@@ -22,7 +23,7 @@ FROM dependencies AS application
 COPY . .
 RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
-RUN EXECUTION_MODE=build .venv/bin/python manage.py collectstatic --noinput
+RUN EXECUTION_MODE=build python manage.py collectstatic --noinput
 
 FROM dependencies AS test-dependencies
 RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
@@ -34,7 +35,7 @@ RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
     uv sync --frozen
 RUN chown -R nobody:nogroup /app
 USER nobody
-CMD ["./run-tests.sh"]
+CMD ["pytest", "--cov", "--cov-report=term-missing"]
 
 FROM python:${PYTHON_VERSION}-slim AS runtime
 

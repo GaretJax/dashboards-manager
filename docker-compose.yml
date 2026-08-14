@@ -17,7 +17,7 @@ services:
   web:
     <<: *app
     command: >-
-      uv run uvicorn kiosk_manager.asgi:application --host 0.0.0.0
+      uvicorn kiosk_manager.asgi:application --host 0.0.0.0
       --port 80 --reload
     environment:
       VIRTUAL_HOST: dashboards.local.aldryn.net
@@ -25,7 +25,7 @@ services:
 
   test:
     <<: *app
-    command: uv run pytest
+    command: pytest
     environment:
       STAGE: test
       SECURE_SSL_REDIRECT: "false"

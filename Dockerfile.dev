@@ -28,4 +28,4 @@ RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
 ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 80
-CMD ["uv", "run", "uvicorn", "kiosk_manager.asgi:application", "--host", "0.0.0.0", "--port", "80", "--reload"]
+CMD ["uvicorn", "kiosk_manager.asgi:application", "--host", "0.0.0.0", "--port", "80", "--reload"]

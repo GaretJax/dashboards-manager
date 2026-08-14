@@ -13,6 +13,7 @@ tests.
 
 ```shell
 cp .env.example .env
+docker compose run --rm web python manage.py collectstatic --noinput
 docker compose up --build
 ```
 
@@ -30,10 +31,27 @@ Display API and page:
 Useful commands:
 
 ```shell
-docker compose run --rm web uv run python manage.py migrate
-docker compose run --rm web uv run python manage.py createsuperuser
+docker compose run --rm web python manage.py collectstatic --noinput
+docker compose run --rm web python manage.py migrate
+docker compose run --rm web python manage.py createsuperuser
 docker compose run --rm test
 ```
+
+## Deployment
+
+Pushes to `main` run tests inside the Docker test image, publish the production
+image to `ghcr.io/garetjax/dashboards-manager`, and deploy it to Divio. Pull
+requests run the test and image-build jobs without publishing or deploying.
+
+Configure these values in the `live` GitHub environment:
+
+- Secret `DIVIO_DEPLOY_TOKEN`
+- Variable `DIVIO_APP_UUID`
+- Variable `BACKEND_DOMAIN`
+
+Divio uses `Dockerfile.divio`, which references the published `latest` image.
+Set production Django and database settings through Divio environment
+variables; `.env.example` lists application configuration keys.
 
 ## Browser kiosk
 
