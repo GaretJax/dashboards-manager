@@ -48,6 +48,33 @@ def test_screen_urls_are_ordered_and_configuration_has_version():
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("value", ["later", "-1", "nan"])
+def test_screen_url_rejects_invalid_preload_seconds(value):
+    screen = Screen.objects.create(name="Lobby")
+    item = ScreenURL(
+        screen=screen,
+        url="https://example.com",
+        preload_seconds=value,
+    )
+
+    with pytest.raises(ValidationError):
+        item.full_clean()
+
+
+@pytest.mark.django_db
+def test_screen_url_accepts_preload_modes_and_seconds():
+    screen = Screen.objects.create(name="Lobby")
+
+    for value in ["auto", "false", "0", "2.5"]:
+        item = ScreenURL(
+            screen=screen,
+            url=f"https://example.com/{value}",
+            preload_seconds=value,
+        )
+        item.full_clean()
+
+
+@pytest.mark.django_db
 def test_screen_url_requires_positive_duration():
     screen = Screen.objects.create(name="Lobby")
     item = ScreenURL(

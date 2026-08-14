@@ -11,7 +11,13 @@ from ..models import ScreenURL
 class ScreenURLInline(admin.TabularInline):
     model = ScreenURL
     extra = 1
-    fields = ["order", "url", "duration_seconds"]
+    fields = [
+        "order",
+        "url",
+        "duration_seconds",
+        "preload_seconds",
+        "preload_timeout_seconds",
+    ]
     ordering = ["order", "pk"]
     verbose_name = _("screen URL")
     verbose_name_plural = _("screen URLs")
@@ -26,6 +32,15 @@ class ScreenAdmin(ModelAdmin):
                     "id",
                     "name",
                     "enabled",
+                ],
+            },
+        ),
+        (
+            _("Preloading"),
+            {
+                "fields": [
+                    "preload_seconds",
+                    "preload_timeout_seconds",
                 ],
             },
         ),

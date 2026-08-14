@@ -32,11 +32,55 @@ def test_screen_config_api_returns_ordered_urls(client):
             "url": "https://example.com/first",
             "duration_seconds": 10,
             "order": 1,
+            "preload_seconds": "auto",
+            "preload_timeout_seconds": 30,
         },
         {
             "url": "https://example.com/second",
             "duration_seconds": 20,
             "order": 2,
+            "preload_seconds": "auto",
+            "preload_timeout_seconds": 30,
+        },
+    ]
+
+
+@pytest.mark.django_db
+def test_screen_config_api_applies_url_preload_overrides(client):
+    screen = Screen.objects.create(
+        name="Lobby",
+        preload_seconds="false",
+        preload_timeout_seconds=45,
+    )
+    ScreenURL.objects.create(
+        screen=screen,
+        url="https://example.com/inherit",
+        order=1,
+    )
+    ScreenURL.objects.create(
+        screen=screen,
+        url="https://example.com/override",
+        order=2,
+        preload_seconds="auto",
+        preload_timeout_seconds=10,
+    )
+
+    response = client.get(f"/api/screens/{screen.public_token}/config")
+
+    assert response.json()["items"] == [
+        {
+            "url": "https://example.com/inherit",
+            "duration_seconds": 30,
+            "order": 1,
+            "preload_seconds": False,
+            "preload_timeout_seconds": 45,
+        },
+        {
+            "url": "https://example.com/override",
+            "duration_seconds": 30,
+            "order": 2,
+            "preload_seconds": "auto",
+            "preload_timeout_seconds": 10,
         },
     ]
 

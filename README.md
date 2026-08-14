@@ -28,6 +28,11 @@ Display API and page:
 - `GET /api/screens/<public-token>/config`
 - `/screens/<public-token>/`
 
+URL preloading is configured per screen and can be overridden per URL.
+`preload_seconds` accepts `auto` (wait for `loadEventFired`), `false` (disable
+preloading), or a non-negative number. `preload_timeout_seconds` limits the
+wait; blank URL values inherit screen settings.
+
 Useful commands:
 
 ```shell

@@ -50,11 +50,15 @@ def fake_client(monkeypatch):
                         "url": "https://example.test/two",
                         "duration_seconds": 20,
                         "order": 2,
+                        "preload_seconds": "auto",
+                        "preload_timeout_seconds": 25,
                     },
                     {
                         "url": "https://example.test/one",
                         "duration_seconds": 10,
                         "order": 1,
+                        "preload_seconds": 2.5,
+                        "preload_timeout_seconds": 10,
                     },
                 ],
             }
@@ -74,6 +78,10 @@ def test_manager_client_fetches_and_orders_playlist(fake_client):
     )
     assert config.version == "abc"
     assert [item.order for item in config.items] == [1, 2]
+    assert config.items[0].preload_seconds == 2.5
+    assert config.items[0].preload_timeout_seconds == 10
+    assert config.items[1].preload_seconds == "auto"
+    assert config.items[1].preload_timeout_seconds == 25
     client.close()
     assert fake_client.closed is True
 

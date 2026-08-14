@@ -1,7 +1,7 @@
 import logging
 import time
 
-from .api import ManagerClient, ManagerError, ScreenConfig
+from .api import ManagerClient, ManagerError, PlaylistItem, ScreenConfig
 from .browser import BrowserController, BrowserError
 
 LOGGER = logging.getLogger("kiosk_agent")
@@ -41,7 +41,7 @@ class AgentRunner:
                 continue
 
             item = config.items[current_index]
-            self._navigate_with_recovery(item.url)
+            self._navigate_with_recovery(item)
             deadline = time.monotonic() + item.duration_seconds
             changed = False
 
@@ -69,9 +69,13 @@ class AgentRunner:
             LOGGER.warning("configuration poll failed: %s", exc)
             return previous
 
-    def _navigate_with_recovery(self, url: str):
+    def _navigate_with_recovery(self, item: PlaylistItem):
         try:
-            self.browser.navigate(url)
+            self.browser.navigate(
+                item.url,
+                preload_seconds=item.preload_seconds,
+                preload_timeout_seconds=item.preload_timeout_seconds,
+            )
             return
         except BrowserError as exc:
             LOGGER.warning("browser navigation failed: %s", exc)
@@ -80,7 +84,11 @@ class AgentRunner:
         while True:
             try:
                 self.browser.start()
-                self.browser.navigate(url)
+                self.browser.navigate(
+                    item.url,
+                    preload_seconds=item.preload_seconds,
+                    preload_timeout_seconds=item.preload_timeout_seconds,
+                )
                 return
             except BrowserError as exc:
                 LOGGER.warning("browser recovery failed: %s", exc)

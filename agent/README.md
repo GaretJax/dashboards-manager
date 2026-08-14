@@ -47,6 +47,10 @@ WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 \
 DISPLAY=:0 kiosk-agent doctor
 ```
 
+The agent preloads configured URLs in background Chromium targets when
+`preload_seconds` is `auto` or numeric. `false` keeps immediate navigation.
+`preload_timeout_seconds` bounds readiness waiting.
+
 User services are default. Graphical autologin starts user services after boot;
 linger is optional. `--scope system` is available for setups that manage a
 separate kiosk user explicitly.

@@ -1,3 +1,5 @@
+import math
+from typing import Literal
 from urllib.parse import quote
 
 import httpx
@@ -8,17 +10,53 @@ class ManagerError(RuntimeError):
     """Raised when manager API cannot provide a valid playlist."""
 
 
+PreloadSeconds = bool | float | Literal["auto"]
+DEFAULT_PRELOAD_TIMEOUT_SECONDS = 30
+
+
 @define(frozen=True, slots=True)
 class PlaylistItem:
     url: str
     duration_seconds: float
     order: int
+    preload_seconds: PreloadSeconds
+    preload_timeout_seconds: float
 
 
 @define(frozen=True, slots=True)
 class ScreenConfig:
     version: str
     items: tuple[PlaylistItem, ...]
+
+
+def _parse_preload_seconds(value) -> PreloadSeconds:
+    if isinstance(value, bool):
+        if not value:
+            return False
+        raise ValueError
+    if value == "auto":
+        return value
+    if not isinstance(value, (int, float)):
+        raise ValueError
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError from exc
+    if not math.isfinite(seconds) or seconds < 0:
+        raise ValueError
+    return seconds
+
+
+def _parse_preload_timeout_seconds(value) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError from exc
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise ValueError
+    return seconds
 
 
 class ManagerClient:
@@ -59,6 +97,13 @@ class ManagerClient:
                     str(item["url"]),
                     float(item["duration_seconds"]),
                     int(item["order"]),
+                    _parse_preload_seconds(item.get("preload_seconds", False)),
+                    _parse_preload_timeout_seconds(
+                        item.get(
+                            "preload_timeout_seconds",
+                            DEFAULT_PRELOAD_TIMEOUT_SECONDS,
+                        )
+                    ),
                 )
                 for item in raw_items
             )
