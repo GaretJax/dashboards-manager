@@ -8,5 +8,6 @@ __pycache__/
 .coverage
 htmlcov/
 .artifacts/
+.divio
 !.artifacts/.gitkeep
 dist/
