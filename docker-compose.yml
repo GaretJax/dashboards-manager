@@ -11,6 +11,7 @@ x-app: &app
     - ./.artifacts/media:/app/media:rw
     - virtualenv:/app/.venv
     - uv-cache:/root/.cache/uv
+    - agent-dist:/app/agent-dist:ro
   depends_on:
     db:
       condition: service_healthy
@@ -85,3 +86,4 @@ volumes:
   postgres:
   uv-cache:
   virtualenv:
+  agent-dist:

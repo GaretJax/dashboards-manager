@@ -1,6 +1,7 @@
 import json
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 from django.urls import reverse
 
 import pytest
@@ -21,6 +22,34 @@ def _html_file():
         b"<!doctype html><h1>Embedded dashboard</h1>",
         content_type="text/html",
     )
+
+
+@pytest.mark.django_db
+def test_agent_wheel_redirect_and_install_script(client, tmp_path):
+    wheel = tmp_path / "kiosk_agent-0.1.2-py3-none-any.whl"
+    wheel.write_bytes(b"fake wheel")
+    screen = Screen.objects.create(name="Lobby")
+
+    with override_settings(KIOSK_AGENT_WHEEL_DIR=tmp_path):
+        redirect_response = client.head("/downloads/kiosk-agent.whl")
+        script_response = client.get(
+            f"/install.sh?screen={screen.public_token}"
+        )
+        wheel_response = client.get(
+            "/downloads/kiosk_agent-0.1.2-py3-none-any.whl"
+        )
+
+    assert redirect_response.status_code == 302
+    assert (
+        redirect_response["Location"]
+        == "/downloads/kiosk_agent-0.1.2-py3-none-any.whl"
+    )
+    assert script_response.status_code == 200
+    assert "kiosk-agent bootstrap" in script_response.text
+    assert screen.public_token in script_response.text
+    assert script_response["Cache-Control"] == "no-store"
+    assert b"".join(wheel_response.streaming_content) == b"fake wheel"
+    assert "immutable" in wheel_response["Cache-Control"]
 
 
 @pytest.mark.django_db

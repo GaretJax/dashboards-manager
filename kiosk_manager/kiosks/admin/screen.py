@@ -110,6 +110,15 @@ class ScreenAdmin(ModelAdmin):
             },
         ),
         (
+            _("Agent installation").upper(),
+            {
+                "fields": [
+                    "agent_install_url",
+                    "agent_install_command",
+                ],
+            },
+        ),
+        (
             _("Timestamps").upper(),
             {
                 "fields": [
@@ -131,6 +140,8 @@ class ScreenAdmin(ModelAdmin):
         "id",
         "public_token",
         "display_url",
+        "agent_install_url",
+        "agent_install_command",
         "power_override",
         "desired_power_state_display",
         "reported_power_state",

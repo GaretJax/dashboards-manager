@@ -22,12 +22,16 @@ def _env_float(name, default):
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+KIOSK_AGENT_WHEEL_DIR = Path(
+    os.environ.get("KIOSK_AGENT_WHEEL_DIR", BASE_DIR / "agent-dist")
+)
 
 EXECUTION_MODE = os.environ.get("EXECUTION_MODE", "run")
 ENVIRONMENT = os.environ.get("STAGE", "local")
 DEBUG = os.environ.get("DEBUG", "").lower() == "true"
 
 SITE_BASE_PATH = os.environ.get("SITE_BASE_PATH", "").rstrip("/")
+SITE_BASE_URL = os.environ.get("SITE_BASE_URL", "").rstrip("/")
 FORCE_SCRIPT_NAME = SITE_BASE_PATH or None
 USE_X_FORWARDED_HOST = True
 

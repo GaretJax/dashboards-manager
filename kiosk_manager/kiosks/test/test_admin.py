@@ -28,8 +28,25 @@ def test_screen_admin_exposes_rotate_token_detail_action(admin_client):
         "POWER SCHEDULE",
         "REMOTE STATE",
         "PUBLIC ACCESS",
+        "AGENT INSTALLATION",
         "TIMESTAMPS",
     ]
+
+
+@pytest.mark.django_db
+def test_screen_admin_shows_agent_install_command(admin_client):
+    screen = Screen.objects.create(name="Lobby")
+
+    response = admin_client.get(
+        reverse(
+            "admin:kiosks_screen_change",
+            kwargs={"object_id": screen.pk},
+        )
+    )
+
+    assert response.status_code == 200
+    assert f"install.sh?screen={screen.public_token}" in response.text
+    assert "curl -fsSL" in response.text
 
 
 @pytest.mark.django_db

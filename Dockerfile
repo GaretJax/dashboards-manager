@@ -23,6 +23,8 @@ FROM dependencies AS application
 COPY . .
 RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
+RUN mkdir -p /app/agent-dist && \
+    uv build agent --wheel --out-dir /app/agent-dist
 RUN EXECUTION_MODE=build python manage.py collectstatic --noinput
 
 FROM dependencies AS test-dependencies
@@ -33,6 +35,8 @@ FROM test-dependencies AS test
 COPY . .
 RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
     uv sync --frozen
+RUN mkdir -p /app/agent-dist && \
+    uv build agent --wheel --out-dir /app/agent-dist
 RUN chown -R nobody:nogroup /app
 USER nobody
 CMD ["pytest", "--cov", "--cov-report=term-missing"]
@@ -53,6 +57,7 @@ COPY --from=application --chown=app:app /app/kiosk_manager /app/kiosk_manager
 COPY --from=application --chown=app:app /app/manage.py /app/manage.py
 COPY --from=application --chown=app:app /app/runserver.sh /app/runserver.sh
 COPY --from=application --chown=app:app /app/aldryn-celery.sh /app/aldryn-celery.sh
+COPY --from=application --chown=app:app /app/agent-dist /app/agent-dist
 COPY --from=application --chown=app:app /app/templates /app/templates
 COPY --from=application --chown=app:app /app/staticfiles /app/staticfiles
 RUN mkdir -p /app/media && chown -R app:app /app/media
