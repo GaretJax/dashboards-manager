@@ -5,25 +5,29 @@ from ninja import Router, Schema
 
 from .models import Screen
 from .services import (
-    effective_preload_seconds,
+    effective_preload_delay_seconds,
     effective_preload_timeout_seconds,
     get_screen_configuration,
+    page_url,
+    serialize_schedule,
 )
 
 router = Router(tags=["screens"])
 
 
-class ScreenURLOutput(Schema):
+class PageOutput(Schema):
     url: str
     duration_seconds: int
     order: int
-    preload_seconds: bool | float | str
+    preload_delay_seconds: float
     preload_timeout_seconds: int
 
 
 class ScreenConfigurationOutput(Schema):
     version: str
-    items: list[ScreenURLOutput]
+    items: list[PageOutput]
+    on_schedule: str | None
+    off_schedule: str | None
 
 
 @router.get(
@@ -40,12 +44,16 @@ def get_screen_config(request, token: str, response: HttpResponse):
     response["Cache-Control"] = "no-store, no-cache, must-revalidate"
     return {
         "version": version,
+        "on_schedule": serialize_schedule(screen.on_schedule),
+        "off_schedule": serialize_schedule(screen.off_schedule),
         "items": [
             {
-                "url": str(item.url),
+                "url": page_url(screen, item),
                 "duration_seconds": item.duration_seconds,
                 "order": item.order,
-                "preload_seconds": effective_preload_seconds(screen, item),
+                "preload_delay_seconds": effective_preload_delay_seconds(
+                    screen, item
+                ),
                 "preload_timeout_seconds": (
                     effective_preload_timeout_seconds(screen, item)
                 ),

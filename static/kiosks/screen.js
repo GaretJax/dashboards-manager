@@ -31,7 +31,7 @@
 	function showCurrentItem() {
 		if (!configuration || configuration.items.length === 0) {
 			frame.removeAttribute("src");
-			setStatus("No URLs configured for this screen.");
+			setStatus("No pages configured for this screen.");
 			window.clearTimeout(transitionTimer);
 			return;
 		}

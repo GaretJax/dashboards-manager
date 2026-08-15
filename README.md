@@ -1,6 +1,6 @@
 # Kiosk Manager
 
-Django application for managing kiosk screens and ordered URL playlists.
+Django application for managing kiosk screens and ordered page playlists.
 
 Each screen has a public token URL. Its page loads an iframe, switches between
 configured URLs after their durations, and polls the read-only Ninja API for
@@ -28,10 +28,11 @@ Display API and page:
 - `GET /api/screens/<public-token>/config`
 - `/screens/<public-token>/`
 
-URL preloading is configured per screen and can be overridden per URL.
-`preload_seconds` accepts `auto` (wait for `loadEventFired`), `false` (disable
-preloading), or a non-negative number. `preload_timeout_seconds` limits the
-wait; blank URL values inherit screen settings.
+Page preloading is configured per screen and can be overridden per page.
+`preload_delay_seconds` starts loading before scheduled display;
+`preload_timeout_seconds` displays page after timeout from request start,
+regardless of load state or delay. Pages can use external URLs or one uploaded
+self-contained HTML file.
 
 Useful commands:
 
@@ -81,3 +82,6 @@ uv tool install ./agent
 kiosk-agent doctor --manager https://manager.example --screen TOKEN
 kiosk-agent service install --manager https://manager.example --screen TOKEN
 ```
+
+For Chromium background preloading and host setup, see
+[`agent/README.md`](agent/README.md#background-preloading).

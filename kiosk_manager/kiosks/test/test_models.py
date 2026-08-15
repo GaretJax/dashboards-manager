@@ -1,9 +1,14 @@
 from django.core.exceptions import ValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
 
 import pytest
 
-from kiosk_manager.kiosks.models import Screen, ScreenURL
+from kiosk_manager.kiosks.models import Page, Screen
 from kiosk_manager.kiosks.services import get_screen_configuration
+
+
+def _page_file(name="page.html", content=b"<h1>Hello</h1>"):
+    return SimpleUploadedFile(name, content, content_type="text/html")
 
 
 @pytest.mark.django_db
@@ -26,15 +31,15 @@ def test_screen_rotates_public_token():
 
 
 @pytest.mark.django_db
-def test_screen_urls_are_ordered_and_configuration_has_version():
+def test_pages_are_ordered_and_configuration_has_version():
     screen = Screen.objects.create(name="Lobby")
-    second = ScreenURL.objects.create(
+    second = Page.objects.create(
         screen=screen,
         url="https://example.com/second",
         duration_seconds=20,
         order=2,
     )
-    first = ScreenURL.objects.create(
+    first = Page.objects.create(
         screen=screen,
         url="https://example.com/first",
         duration_seconds=10,
@@ -48,36 +53,54 @@ def test_screen_urls_are_ordered_and_configuration_has_version():
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("value", ["later", "-1", "nan"])
-def test_screen_url_rejects_invalid_preload_seconds(value):
+def test_page_requires_url_xor_html_file():
     screen = Screen.objects.create(name="Lobby")
-    item = ScreenURL(
+
+    with pytest.raises(ValidationError):
+        Page(screen=screen, order=1).full_clean()
+    with pytest.raises(ValidationError):
+        Page(
+            screen=screen,
+            url="https://example.com",
+            html_file=_page_file(),
+            order=1,
+        ).full_clean()
+
+    page = Page(screen=screen, html_file=_page_file(), order=1)
+    page.full_clean()
+    assert page.html_file.name == "page.html"
+
+
+@pytest.mark.django_db
+def test_page_rejects_non_html_upload():
+    screen = Screen.objects.create(name="Lobby")
+    page = Page(
         screen=screen,
-        url="https://example.com",
-        preload_seconds=value,
+        html_file=SimpleUploadedFile("page.txt", b"hello"),
     )
 
     with pytest.raises(ValidationError):
-        item.full_clean()
+        page.full_clean()
 
 
 @pytest.mark.django_db
-def test_screen_url_accepts_preload_modes_and_seconds():
+@pytest.mark.parametrize("value", [-1, "-1"])
+def test_page_rejects_invalid_preload_delay(value):
     screen = Screen.objects.create(name="Lobby")
+    page = Page(
+        screen=screen,
+        url="https://example.com",
+        preload_delay_seconds=value,
+    )
 
-    for value in ["auto", "false", "0", "2.5"]:
-        item = ScreenURL(
-            screen=screen,
-            url=f"https://example.com/{value}",
-            preload_seconds=value,
-        )
-        item.full_clean()
+    with pytest.raises(ValidationError):
+        page.full_clean()
 
 
 @pytest.mark.django_db
-def test_screen_url_requires_positive_duration():
+def test_page_requires_positive_duration():
     screen = Screen.objects.create(name="Lobby")
-    item = ScreenURL(
+    page = Page(
         screen=screen,
         url="https://example.com",
         duration_seconds=0,
@@ -85,20 +108,20 @@ def test_screen_url_requires_positive_duration():
     )
 
     with pytest.raises(ValidationError):
-        item.full_clean()
+        page.full_clean()
 
 
 @pytest.mark.django_db
-def test_screen_url_order_is_unique_per_screen():
+def test_page_order_is_unique_per_screen():
     screen = Screen.objects.create(name="Lobby")
-    ScreenURL.objects.create(
+    Page.objects.create(
         screen=screen,
         url="https://example.com/first",
         order=1,
     )
 
     with pytest.raises(ValidationError):
-        ScreenURL(
+        Page(
             screen=screen,
             url="https://example.com/second",
             order=1,

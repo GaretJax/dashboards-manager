@@ -1,16 +1,20 @@
+import logging
 import math
-from typing import Literal
 from urllib.parse import quote
 
 import httpx
 from attrs import define
+
+from .cec import PowerSchedule
+
+LOGGER = logging.getLogger(__name__)
 
 
 class ManagerError(RuntimeError):
     """Raised when manager API cannot provide a valid playlist."""
 
 
-PreloadSeconds = bool | float | Literal["auto"]
+DEFAULT_PRELOAD_DELAY_SECONDS = 0.0
 DEFAULT_PRELOAD_TIMEOUT_SECONDS = 30
 
 
@@ -19,7 +23,7 @@ class PlaylistItem:
     url: str
     duration_seconds: float
     order: int
-    preload_seconds: PreloadSeconds
+    preload_delay_seconds: float
     preload_timeout_seconds: float
 
 
@@ -27,16 +31,12 @@ class PlaylistItem:
 class ScreenConfig:
     version: str
     items: tuple[PlaylistItem, ...]
+    on_schedule: str | None = None
+    off_schedule: str | None = None
 
 
-def _parse_preload_seconds(value) -> PreloadSeconds:
-    if isinstance(value, bool):
-        if not value:
-            return False
-        raise ValueError
-    if value == "auto":
-        return value
-    if not isinstance(value, (int, float)):
+def _parse_preload_delay_seconds(value) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError
     try:
         seconds = float(value)
@@ -57,6 +57,15 @@ def _parse_preload_timeout_seconds(value) -> float:
     if not math.isfinite(seconds) or seconds <= 0:
         raise ValueError
     return seconds
+
+
+def _parse_schedule(value) -> str | None:
+    if value in (None, ""):
+        return None
+    if not isinstance(value, str):
+        raise ValueError
+    PowerSchedule(on_schedule=value)
+    return value
 
 
 class ManagerClient:
@@ -88,8 +97,12 @@ class ManagerClient:
 
         try:
             payload = response.json()
+            if not isinstance(payload, dict):
+                raise TypeError
             version = payload["version"]
             raw_items = payload["items"]
+            on_schedule = _parse_schedule(payload.get("on_schedule"))
+            off_schedule = _parse_schedule(payload.get("off_schedule"))
             if not isinstance(version, str) or not isinstance(raw_items, list):
                 raise TypeError
             items = tuple(
@@ -97,7 +110,12 @@ class ManagerClient:
                     str(item["url"]),
                     float(item["duration_seconds"]),
                     int(item["order"]),
-                    _parse_preload_seconds(item.get("preload_seconds", False)),
+                    _parse_preload_delay_seconds(
+                        item.get(
+                            "preload_delay_seconds",
+                            DEFAULT_PRELOAD_DELAY_SECONDS,
+                        )
+                    ),
                     _parse_preload_timeout_seconds(
                         item.get(
                             "preload_timeout_seconds",
@@ -115,7 +133,15 @@ class ManagerClient:
         if any(item.duration_seconds <= 0 for item in items):
             raise ManagerError("manager returned non-positive duration")
 
-        return ScreenConfig(
+        config = ScreenConfig(
             version,
             tuple(sorted(items, key=lambda item: (item.order, item.url))),
+            on_schedule,
+            off_schedule,
         )
+        LOGGER.info(
+            "fetched config version=%s items=%d",
+            config.version,
+            len(config.items),
+        )
+        return config

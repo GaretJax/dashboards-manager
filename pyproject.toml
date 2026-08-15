@@ -12,6 +12,7 @@ dependencies = [
   "sentry-sdk[django]>=2.0",
   "uvicorn",
   "whitenoise[brotli]",
+  "django-recurrence>=1.14,<2",
 ]
 
 [dependency-groups]

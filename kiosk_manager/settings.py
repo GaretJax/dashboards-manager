@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 import dj_database_url
+import recurrence
 
 
 def _env_int(name, default):
@@ -117,10 +118,15 @@ TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 
+MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_URL = f"{SITE_BASE_PATH}/media/"
 STATIC_URL = f"{SITE_BASE_PATH}/static/"
 WHITENOISE_STATIC_PREFIX = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_DIRS = [BASE_DIR / "static"]
+STATICFILES_DIRS = [
+    BASE_DIR / "static",
+    Path(recurrence.__file__).resolve().parent / "static",
+]
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {

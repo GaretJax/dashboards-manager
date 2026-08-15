@@ -5,6 +5,7 @@ import math
 import os
 import shutil
 import subprocess
+import threading
 import time
 from pathlib import Path
 from urllib.parse import urlparse
@@ -20,6 +21,20 @@ LOGGER = logging.getLogger(__name__)
 
 class BrowserError(RuntimeError):
     """Raised when Chromium cannot be controlled."""
+
+
+@define(slots=True)
+class _PreloadJob:
+    key: str
+    url: str
+    timeout_seconds: float
+    preload_delay_seconds: float = 0
+    target_id: str | None = None
+    socket: websocket.WebSocket | None = None
+    title: str | None = None
+    error: BrowserError | None = None
+    ready: threading.Event = field(factory=threading.Event)
+    cancelled: threading.Event = field(factory=threading.Event)
 
 
 def find_browser(command: str | None = None) -> str:
@@ -42,12 +57,33 @@ class BrowserController:
     _process: subprocess.Popen | None = field(init=False, default=None)
     _socket: websocket.WebSocket | None = field(init=False, default=None)
     _target_id: str | None = field(init=False, default=None)
+    _preload_jobs: dict[str, _PreloadJob] = field(init=False, factory=dict)
+    _preload_lock: threading.RLock = field(init=False, factory=threading.RLock)
     _message_id: int = field(init=False, default=0)
 
     def start(self):
         if self.launch:
             self._launch_browser()
-        target = self._wait_for_page()
+            self._wait_for_page(check_process=False)
+            result = self._browser_command(
+                "Target.createTarget",
+                {
+                    "url": "about:blank",
+                    "newWindow": True,
+                    "background": False,
+                    "focus": True,
+                    "windowState": "fullscreen",
+                },
+            )
+            target_id = result.get("targetId")
+            if not target_id:
+                raise BrowserError(
+                    "Chrome did not return an initial page target"
+                )
+            self._close_page_targets(exclude_target_id=target_id)
+            target = self._wait_for_page(target_id, check_process=False)
+        else:
+            target = self._wait_for_page()
         try:
             socket = websocket.create_connection(
                 target["webSocketDebuggerUrl"],
@@ -60,12 +96,16 @@ class BrowserController:
         self._socket = socket
         self._target_id = target.get("id")
         self._send_command("Page.enable")
+        self._enable_focus_emulation(self._socket)
 
     def close(self):
-        if self._socket is not None:
-            with contextlib.suppress(websocket.WebSocketException):
-                self._socket.close()
-            self._socket = None
+        self.cancel_preloads()
+        sockets = (self._socket,)
+        for socket in sockets:
+            if socket is not None:
+                with contextlib.suppress(websocket.WebSocketException):
+                    socket.close()
+        self._socket = None
         self._target_id = None
         if self._process is not None and self._process.poll() is None:
             self._process.terminate()
@@ -77,27 +117,178 @@ class BrowserController:
                 self._process.wait()
         self._process = None
 
+    def start_preload(
+        self,
+        key: str,
+        url: str,
+        timeout_seconds: float,
+        preload_delay_seconds: float = 0,
+    ):
+        with self._preload_lock:
+            if key in self._preload_jobs:
+                return
+            job = _PreloadJob(
+                key,
+                url,
+                timeout_seconds,
+                preload_delay_seconds=preload_delay_seconds,
+            )
+            self._preload_jobs[key] = job
+        threading.Thread(
+            target=self._load_preload,
+            args=(job,),
+            name=f"kiosk-preload-{key}",
+            daemon=True,
+        ).start()
+
+    def activate_preload(self, key: str):
+        with self._preload_lock:
+            job = self._preload_jobs.get(key)
+        if job is None:
+            raise BrowserError(f"preload is unavailable: {key}")
+
+        job.ready.wait()
+        with self._preload_lock:
+            self._preload_jobs.pop(key, None)
+        if job.error is not None:
+            self._close_preload_target(job)
+            raise job.error
+        if job.cancelled.is_set() or job.socket is None or not job.target_id:
+            self._close_preload_target(job)
+            raise BrowserError(f"preload was cancelled: {key}")
+
+        old_socket = self._socket
+        old_target_id = self._target_id
+        activated = False
+        try:
+            self._browser_command(
+                "Target.activateTarget", {"targetId": job.target_id}
+            )
+            self._socket = job.socket
+            self._target_id = job.target_id
+            activated = True
+        except BrowserError:
+            self._close_preload_target(job)
+            raise
+        finally:
+            if activated:
+                if old_socket is not None and old_socket is not job.socket:
+                    with contextlib.suppress(websocket.WebSocketException):
+                        old_socket.close()
+                if old_target_id and old_target_id != job.target_id:
+                    with contextlib.suppress(BrowserError):
+                        self._browser_command(
+                            "Target.closeTarget", {"targetId": old_target_id}
+                        )
+
+    def cancel_preloads(self):
+        with self._preload_lock:
+            jobs = tuple(self._preload_jobs.values())
+            self._preload_jobs.clear()
+        for job in jobs:
+            job.cancelled.set()
+            self._close_preload_target(job)
+
+    def _load_preload(self, job: _PreloadJob):
+        new_socket = None
+        try:
+            target_id, new_socket = self._create_preload_target()
+            job.target_id = target_id
+            job.socket = new_socket
+            self._send_socket_command(new_socket, "Page.enable")
+            self._enable_focus_emulation(new_socket)
+            request_started = time.monotonic()
+            load_event_received = self._navigate_and_wait(
+                new_socket,
+                job.url,
+                job.preload_delay_seconds,
+                job.timeout_seconds,
+            )
+            if load_event_received and job.preload_delay_seconds > 0:
+                timeout_remaining = max(
+                    0,
+                    job.timeout_seconds - (time.monotonic() - request_started),
+                )
+                delay = min(job.preload_delay_seconds, timeout_remaining)
+                if not job.cancelled.wait(delay) and delay > 0:
+                    LOGGER.info(
+                        "preload delay elapsed url=%s seconds=%.1f",
+                        job.url,
+                        delay,
+                    )
+            if not job.cancelled.is_set():
+                job.ready.set()
+                return
+        except (
+            BrowserError,
+            KeyError,
+            OSError,
+            websocket.WebSocketException,
+        ) as exc:
+            job.error = (
+                exc
+                if isinstance(exc, BrowserError)
+                else BrowserError(f"preloading failed: {exc}")
+            )
+        finally:
+            if job.error is not None or job.cancelled.is_set():
+                self._close_preload_target(job)
+            job.ready.set()
+
+    def _create_preload_target(
+        self,
+    ) -> tuple[str, websocket.WebSocket]:
+        result = self._browser_command(
+            "Target.createTarget",
+            {"url": "about:blank", "background": True},
+        )
+        target_id = result.get("targetId")
+        if not target_id:
+            raise BrowserError("Chrome did not return a preload target")
+        target = self._wait_for_page(target_id)
+        try:
+            socket = websocket.create_connection(
+                target["webSocketDebuggerUrl"],
+                timeout=5,
+            )
+        except (KeyError, OSError, websocket.WebSocketException) as exc:
+            raise BrowserError(f"could not connect to preload: {exc}") from exc
+        return target_id, socket
+
+    def _close_preload_target(self, job: _PreloadJob):
+        if job.socket is not None:
+            with contextlib.suppress(websocket.WebSocketException):
+                job.socket.close()
+            job.socket = None
+        if job.target_id:
+            with contextlib.suppress(BrowserError):
+                self._browser_command(
+                    "Target.closeTarget", {"targetId": job.target_id}
+                )
+            job.target_id = None
+
     def navigate(
         self,
         url: str,
         *,
-        preload_seconds: bool | float | str = False,
+        preload_delay_seconds: float = 0,
         preload_timeout_seconds: float = 30,
     ):
         if self._socket is None:
             raise BrowserError("browser CDP connection is not open")
-        if isinstance(preload_seconds, bool):
-            if not preload_seconds:
-                self._send_command("Page.navigate", {"url": url})
-                return
-            raise BrowserError(
-                "preload_seconds must be false, auto, or a non-negative number"
-            )
-        self._preload_and_activate(
+        try:
+            delay = float(preload_delay_seconds)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise BrowserError("preload delay must be numeric") from exc
+        if not math.isfinite(delay) or delay < 0:
+            raise BrowserError("preload delay must be non-negative")
+        self.start_preload(
+            "__direct__",
             url,
-            preload_seconds,
             preload_timeout_seconds,
+            delay,
         )
+        self.activate_preload("__direct__")
 
     def _launch_browser(self):
         browser = find_browser(self.browser)
@@ -122,6 +313,7 @@ class BrowserController:
                 "--kiosk",
                 "--noerrdialogs",
                 "--disable-infobars",
+                "--hide-scrollbars",
                 "--disable-session-crashed-bubble",
                 "--no-first-run",
                 "--start-maximized",
@@ -129,6 +321,9 @@ class BrowserController:
                 f"--remote-debugging-port={port}",
                 f"--remote-allow-origins={origin}",
                 "--password-store=basic",
+                "--disable-background-timer-throttling",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-renderer-backgrounding",
                 f"--user-data-dir={self.profile_dir}",
                 "about:blank",
             ]
@@ -145,89 +340,53 @@ class BrowserController:
         except OSError as exc:
             raise BrowserError(f"could not launch browser: {exc}") from exc
 
-    def _preload_and_activate(
-        self,
-        url: str,
-        preload_seconds: float | str,
-        preload_timeout_seconds: float,
-    ):
-        old_socket = self._socket
-        old_target_id = self._target_id
-        new_socket = None
-        new_target_id = None
-        try:
-            result = self._browser_command(
-                "Target.createTarget",
-                {"url": "about:blank", "background": True},
-            )
-            new_target_id = result.get("targetId")
-            if not new_target_id:
-                raise BrowserError("Chrome did not return a preloading target")
-
-            target = self._wait_for_page(new_target_id)
-            new_socket = websocket.create_connection(
-                target["webSocketDebuggerUrl"],
-                timeout=5,
-            )
-            self._send_socket_command(new_socket, "Page.enable")
-            self._navigate_and_wait(
-                new_socket,
-                url,
-                preload_seconds,
-                preload_timeout_seconds,
-            )
-            self._browser_command(
-                "Target.activateTarget", {"targetId": new_target_id}
-            )
-
-            self._socket = new_socket
-            self._target_id = new_target_id
-            new_socket = None
-            if old_socket is not None:
-                with contextlib.suppress(websocket.WebSocketException):
-                    old_socket.close()
-            if old_target_id:
+    def _close_page_targets(self, *, exclude_target_id: str):
+        result = self._browser_command("Target.getTargets")
+        for target in result.get("targetInfos", []):
+            if target.get("type") != "page":
+                continue
+            target_id = target.get("targetId")
+            if target_id and target_id != exclude_target_id:
                 with contextlib.suppress(BrowserError):
                     self._browser_command(
-                        "Target.closeTarget", {"targetId": old_target_id}
+                        "Target.closeTarget", {"targetId": target_id}
                     )
-        except (KeyError, OSError, websocket.WebSocketException) as exc:
-            raise BrowserError(f"preloading failed: {exc}") from exc
-        finally:
-            if new_socket is not None:
-                with contextlib.suppress(websocket.WebSocketException):
-                    new_socket.close()
-            if new_target_id and self._target_id != new_target_id:
-                with contextlib.suppress(BrowserError):
-                    self._browser_command(
-                        "Target.closeTarget", {"targetId": new_target_id}
-                    )
+
+    def _enable_focus_emulation(self, socket: websocket.WebSocket):
+        self._send_socket_command(
+            socket,
+            "Emulation.setFocusEmulationEnabled",
+            {"enabled": True},
+        )
 
     def _navigate_and_wait(
         self,
         socket: websocket.WebSocket,
         url: str,
-        preload_seconds: float | str,
+        preload_delay_seconds: float,
         preload_timeout_seconds: float,
-    ):
+    ) -> bool:
         try:
-            minimum_seconds = (
-                0 if preload_seconds == "auto" else float(preload_seconds)
-            )
-            timeout_seconds = max(
-                float(preload_timeout_seconds), minimum_seconds
-            )
-        except (TypeError, ValueError) as exc:
+            delay_seconds = float(preload_delay_seconds)
+            timeout_seconds = float(preload_timeout_seconds)
+        except (TypeError, ValueError, OverflowError) as exc:
             raise BrowserError(
                 "preload settings must contain numeric seconds"
             ) from exc
         if (
-            not math.isfinite(minimum_seconds)
-            or minimum_seconds < 0
+            not math.isfinite(delay_seconds)
+            or delay_seconds < 0
             or not math.isfinite(timeout_seconds)
             or timeout_seconds <= 0
         ):
             raise BrowserError("preload settings must contain valid seconds")
+        LOGGER.info(
+            "page load started url=%s preload_delay_seconds=%.1f "
+            "timeout_seconds=%.1f",
+            url,
+            delay_seconds,
+            timeout_seconds,
+        )
         started = time.monotonic()
         navigation_id = self._next_message_id()
         try:
@@ -240,10 +399,11 @@ class BrowserController:
                     }
                 )
             )
-            navigation_complete = False
             load_event = False
             deadline = started + timeout_seconds
             while time.monotonic() < deadline:
+                if load_event:
+                    break
                 remaining = max(0.1, deadline - time.monotonic())
                 socket.settimeout(min(1, remaining))
                 try:
@@ -252,6 +412,12 @@ class BrowserController:
                     continue
                 if message.get("method") == "Page.loadEventFired":
                     load_event = True
+                    LOGGER.info(
+                        "page load event received url=%s elapsed_seconds=%.3f",
+                        url,
+                        time.monotonic() - started,
+                    )
+                    break
                 if message.get("id") != navigation_id:
                     continue
                 if "error" in message:
@@ -260,31 +426,41 @@ class BrowserController:
                 error_text = result.get("errorText")
                 if error_text:
                     raise BrowserError(f"navigation failed: {error_text}")
-                navigation_complete = True
-                if load_event:
-                    break
-            if not (navigation_complete and load_event):
+            if not load_event:
                 LOGGER.warning(
-                    "preload timed out after %.1fs; activating %s",
-                    timeout_seconds,
+                    "page load done url=%s result=timed_out "
+                    "waiting_for=load_event timeout_seconds=%.1f",
                     url,
+                    timeout_seconds,
                 )
-            else:
-                remaining = started + minimum_seconds - time.monotonic()
-                if remaining > 0:
-                    time.sleep(remaining)
+                return False
+            LOGGER.info(
+                "page load done url=%s result=loaded",
+                url,
+            )
+            return True
         except (OSError, ValueError, websocket.WebSocketException) as exc:
             raise BrowserError(f"preload CDP command failed: {exc}") from exc
         finally:
             with contextlib.suppress(OSError, websocket.WebSocketException):
                 socket.settimeout(5)
 
-    def _wait_for_page(self, target_id: str | None = None) -> dict:
+    def _wait_for_page(
+        self,
+        target_id: str | None = None,
+        *,
+        check_process: bool = True,
+    ) -> dict:
         deadline = time.monotonic() + self.startup_timeout
         url = f"{self.cdp_url.rstrip('/')}/json/list"
         last_error = "no page target"
         while time.monotonic() < deadline:
-            if self._process is not None and self._process.poll() is not None:
+            if (
+                check_process
+                and self._process is not None
+                and self._process.poll() is not None
+                and self._process.returncode not in (None, 0)
+            ):
                 raise BrowserError(
                     f"browser exited with status {self._process.returncode}"
                 )

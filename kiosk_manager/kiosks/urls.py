@@ -10,4 +10,9 @@ urlpatterns = [
         views.screen_display,
         name="screen-display",
     ),
+    path(
+        "screens/<str:token>/pages/<int:page_id>/",
+        views.page_content,
+        name="page-content",
+    ),
 ]

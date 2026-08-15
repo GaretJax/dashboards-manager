@@ -2,6 +2,7 @@ from django.urls import reverse
 
 import pytest
 
+from kiosk_manager.kiosks.admin.screen import ScreenAdmin
 from kiosk_manager.kiosks.models import Screen
 
 
@@ -22,3 +23,10 @@ def test_screen_admin_exposes_rotate_token_detail_action(admin_client):
     screen.refresh_from_db()
     assert response.status_code == 302
     assert screen.public_token != old_token
+    assert [title for title, _options in ScreenAdmin.fieldsets] == [
+        "SCREEN",
+        "POWER SCHEDULE",
+        "PRELOADING",
+        "PUBLIC ACCESS",
+        "TIMESTAMPS",
+    ]

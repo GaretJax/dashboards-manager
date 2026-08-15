@@ -2,42 +2,67 @@ import hashlib
 import json
 from typing import cast
 
-from .models import (
-    Screen,
-    ScreenURL,
-    serialize_preload_seconds,
-)
+from django.conf import settings
+
+from .models import Page, Screen
 
 
-def effective_preload_seconds(screen: Screen, item: ScreenURL):
-    value = item.preload_seconds or screen.preload_seconds
-    return serialize_preload_seconds(value)
+def effective_preload_delay_seconds(screen: Screen, page: Page) -> float:
+    value = (
+        page.preload_delay_seconds
+        if page.preload_delay_seconds is not None
+        else screen.preload_delay_seconds
+    )
+    try:
+        return float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("invalid preload delay") from exc
 
 
-def effective_preload_timeout_seconds(screen: Screen, item: ScreenURL):
+def effective_preload_timeout_seconds(screen: Screen, page: Page) -> int:
     return (
-        item.preload_timeout_seconds
-        if item.preload_timeout_seconds is not None
+        page.preload_timeout_seconds
+        if page.preload_timeout_seconds is not None
         else screen.preload_timeout_seconds
     )
 
 
+def page_url(screen: Screen, page: Page) -> str:
+    if page.html_file:
+        return (
+            f"{settings.SITE_BASE_PATH}/screens/{screen.public_token}/"
+            f"pages/{page.pk}/"
+        )
+    return str(page.url)
+
+
+def serialize_schedule(schedule) -> str | None:
+    value = str(schedule or "")
+    return value or None
+
+
 def get_screen_configuration(screen: Screen):
-    items = list(
-        ScreenURL.objects.filter(screen=screen).order_by("order", "pk")
-    )
+    items = list(Page.objects.filter(screen=screen).order_by("order", "pk"))
     version_payload = [
         {
-            "url": str(item.url),
+            "url": page_url(screen, item),
             "duration_seconds": cast(int, item.duration_seconds),
             "order": cast(int, item.order),
-            "preload_seconds": effective_preload_seconds(screen, item),
+            "preload_delay_seconds": effective_preload_delay_seconds(
+                screen, item
+            ),
             "preload_timeout_seconds": effective_preload_timeout_seconds(
                 screen, item
             ),
         }
         for item in items
     ]
+    version_payload.extend(
+        [
+            {"on_schedule": serialize_schedule(screen.on_schedule)},
+            {"off_schedule": serialize_schedule(screen.off_schedule)},
+        ]
+    )
     version = hashlib.sha256(
         json.dumps(
             version_payload,

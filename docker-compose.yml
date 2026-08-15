@@ -22,6 +22,9 @@ services:
     environment:
       VIRTUAL_HOST: dashboards.local.aldryn.net
       PORT: 80
+    networks:
+      - default
+      - lb
 
   test:
     <<: *app
@@ -43,13 +46,14 @@ services:
       - ".:/app:rw"
       - postgres:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d kiosk_manager"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d db"]
       interval: 2s
       timeout: 5s
       retries: 10
 
 networks:
   default:
+  lb:
     name: divio-local-lb
     external: true
 

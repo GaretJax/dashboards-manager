@@ -8,9 +8,10 @@ from attrs import define
 
 from .api import ManagerClient, ManagerError
 from .browser import BrowserError, find_browser
+from .cec import CecError, detect_cec_ports, list_cec_ports
 from .display import display_environment_detail, display_environment_ready
 from .paths import ephemeral_runtime_reason, get_paths
-from .service import SERVICE_NAME
+from .service import unit_path
 
 
 @define(frozen=True, slots=True)
@@ -103,6 +104,34 @@ def _linger_check() -> CheckResult:
     )
 
 
+def _cec_check(cec_port: str | None) -> CheckResult:
+    try:
+        ports = list_cec_ports() if cec_port else detect_cec_ports()
+    except CecError as exc:
+        if cec_port is None:
+            return _warning("HDMI-CEC", f"skipped; {exc}")
+        return _result("HDMI-CEC", False, str(exc))
+
+    if cec_port:
+        if cec_port in ports or Path(cec_port).exists():
+            return _result(
+                "HDMI-CEC",
+                True,
+                f"configured {cec_port}; detected {', '.join(ports) or 'none'}",
+            )
+        return _result(
+            "HDMI-CEC",
+            False,
+            f"configured {cec_port}; detected {', '.join(ports) or 'none'}",
+        )
+    if ports:
+        return _warning(
+            "HDMI-CEC",
+            f"detected {', '.join(ports)}; pass --cec-port to enable power control",
+        )
+    return _warning("HDMI-CEC", "no CEC ports detected")
+
+
 def _cdp_check(cdp_url: str) -> CheckResult:
     try:
         response = httpx.get(f"{cdp_url.rstrip('/')}/json/version", timeout=2)
@@ -119,6 +148,7 @@ def run_checks(
     screen_token: str | None = None,
     cdp_url: str = "http://127.0.0.1:9222",
     browser: str | None = None,
+    cec_port: str | None = None,
     require_persistent: bool = False,
     include_service: bool = True,
 ) -> list[CheckResult]:
@@ -178,6 +208,7 @@ def run_checks(
             ]
         )
 
+    results.append(_cec_check(cec_port))
     results.append(_cdp_check(cdp_url))
 
     if manager_url and screen_token:
@@ -206,10 +237,8 @@ def run_checks(
     return results
 
 
-def service_unit_check(scope: str) -> CheckResult:
-    path = (
-        Path("/etc/systemd/system") / SERVICE_NAME
-        if scope == "system"
-        else Path.home() / ".config/systemd/user" / SERVICE_NAME
-    )
+def service_unit_check(
+    scope: str, config_name: str | None = None
+) -> CheckResult:
+    path = unit_path(scope, config_name)
     return _result("service unit", path.exists(), str(path))

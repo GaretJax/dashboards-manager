@@ -1,8 +1,6 @@
 import django.core.validators
 from django.db import migrations, models
 
-import kiosk_manager.kiosks.models
-
 
 class Migration(migrations.Migration):
     dependencies = [
@@ -20,9 +18,6 @@ class Migration(migrations.Migration):
                     "preloading; otherwise enter seconds"
                 ),
                 max_length=32,
-                validators=[
-                    kiosk_manager.kiosks.models.validate_preload_seconds
-                ],
                 verbose_name="preload seconds",
             ),
         ),
@@ -46,9 +41,6 @@ class Migration(migrations.Migration):
                     "or seconds"
                 ),
                 max_length=32,
-                validators=[
-                    kiosk_manager.kiosks.models.validate_preload_seconds
-                ],
                 verbose_name="preload seconds override",
             ),
         ),

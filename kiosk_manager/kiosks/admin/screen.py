@@ -5,28 +5,29 @@ from django.utils.translation import gettext_lazy as _
 
 from adminutils import ModelAdmin, object_action, options
 
-from ..models import ScreenURL
+from ..models import Page
 
 
-class ScreenURLInline(admin.TabularInline):
-    model = ScreenURL
+class PageInline(admin.TabularInline):
+    model = Page
     extra = 1
     fields = [
         "order",
         "url",
+        "html_file",
         "duration_seconds",
-        "preload_seconds",
+        "preload_delay_seconds",
         "preload_timeout_seconds",
     ]
     ordering = ["order", "pk"]
-    verbose_name = _("screen URL")
-    verbose_name_plural = _("screen URLs")
+    verbose_name = _("page")
+    verbose_name_plural = _("pages")
 
 
 class ScreenAdmin(ModelAdmin):
     fieldsets = [
         (
-            _("Screen"),
+            _("Screen").upper(),
             {
                 "fields": [
                     "id",
@@ -36,16 +37,25 @@ class ScreenAdmin(ModelAdmin):
             },
         ),
         (
-            _("Preloading"),
+            _("Power schedule").upper(),
             {
                 "fields": [
-                    "preload_seconds",
+                    "on_schedule",
+                    "off_schedule",
+                ],
+            },
+        ),
+        (
+            _("Preloading").upper(),
+            {
+                "fields": [
+                    "preload_delay_seconds",
                     "preload_timeout_seconds",
                 ],
             },
         ),
         (
-            _("Public access"),
+            _("Public access").upper(),
             {
                 "fields": [
                     "public_token",
@@ -54,7 +64,7 @@ class ScreenAdmin(ModelAdmin):
             },
         ),
         (
-            _("Timestamps"),
+            _("Timestamps").upper(),
             {
                 "fields": [
                     "created_at",
@@ -65,7 +75,7 @@ class ScreenAdmin(ModelAdmin):
     ]
     list_display = ["name", "enabled", "display_url", "updated_at"]
     list_filter = ["enabled", "created_at", "updated_at"]
-    search_fields = ["name", "public_token", "screen_urls__url"]
+    search_fields = ["name", "public_token", "pages__url", "pages__html_file"]
     readonly_fields = [
         "id",
         "public_token",
@@ -75,7 +85,7 @@ class ScreenAdmin(ModelAdmin):
     ]
     ordering = ["name", "pk"]
     date_hierarchy = "created_at"
-    inlines = [ScreenURLInline]
+    inlines = [PageInline]
     change_actions = ["rotate_public_token_action"]
 
     @admin.display(description=_("display URL"))
