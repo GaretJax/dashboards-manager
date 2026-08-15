@@ -162,6 +162,36 @@ def test_numeric_preload_logs_load_event(caplog, tmp_path):
     assert "page load done" in caplog.text
 
 
+def test_javascript_dialog_policy(monkeypatch, tmp_path):
+    controller = BrowserController(
+        browser="chromium",
+        cdp_url="http://127.0.0.1:9222",
+        profile_dir=tmp_path,
+    )
+    calls = []
+    monkeypatch.setattr(
+        BrowserController,
+        "_send_socket_command",
+        lambda _controller, _socket, method, params=None: calls.append(
+            (method, params)
+        ),
+    )
+    socket = Mock()
+
+    for dialog_type, expected_accept in (
+        ("alert", True),
+        ("confirm", False),
+        ("prompt", False),
+        ("beforeunload", True),
+    ):
+        controller._handle_dialog_event(  # pyright: ignore[reportPrivateUsage]
+            socket,
+            {"params": {"type": dialog_type, "message": "hello"}},
+        )
+        assert calls[-1][0] == "Page.handleJavaScriptDialog"
+        assert calls[-1][1] == {"accept": expected_accept}
+
+
 def test_numeric_preload_waits_from_load_event(monkeypatch, caplog, tmp_path):
     controller = BrowserController(
         browser="chromium",
@@ -176,7 +206,12 @@ def test_numeric_preload_waits_from_load_event(monkeypatch, caplog, tmp_path):
         preload_delay_seconds=7,
     )
     job.cancelled = Mock()
-    job.cancelled.wait.return_value = False
+    wait_for_dialogs = Mock(return_value=False)
+    monkeypatch.setattr(
+        BrowserController,
+        "_wait_with_dialogs",
+        wait_for_dialogs,
+    )
     monkeypatch.setattr(
         BrowserController,
         "_create_preload_target",
@@ -201,7 +236,7 @@ def test_numeric_preload_waits_from_load_event(monkeypatch, caplog, tmp_path):
 
     controller._load_preload(job)  # pyright: ignore[reportPrivateUsage]
 
-    job.cancelled.wait.assert_called_once_with(7)
+    wait_for_dialogs.assert_called_once_with(socket, job.cancelled, 7)
     assert "preload delay elapsed" in caplog.text
 
 
@@ -219,7 +254,12 @@ def test_preload_delay_cannot_extend_request_timeout(monkeypatch, tmp_path):
         preload_delay_seconds=10,
     )
     job.cancelled = Mock()
-    job.cancelled.wait.return_value = False
+    wait_for_dialogs = Mock(return_value=False)
+    monkeypatch.setattr(
+        BrowserController,
+        "_wait_with_dialogs",
+        wait_for_dialogs,
+    )
     monkeypatch.setattr(
         BrowserController,
         "_create_preload_target",
@@ -243,7 +283,7 @@ def test_preload_delay_cannot_extend_request_timeout(monkeypatch, tmp_path):
 
     controller._load_preload(job)  # pyright: ignore[reportPrivateUsage]
 
-    assert job.cancelled.wait.call_args.args[0] < 0.1
+    assert wait_for_dialogs.call_args.args[2] < 0.1
 
 
 def test_numeric_preload_does_not_wait_for_timeout_after_load_event(tmp_path):

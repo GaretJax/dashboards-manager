@@ -227,7 +227,14 @@ class BrowserController:
                     job.timeout_seconds - (time.monotonic() - request_started),
                 )
                 delay = min(job.preload_delay_seconds, timeout_remaining)
-                if not job.cancelled.wait(delay) and delay > 0:
+                if (
+                    not self._wait_with_dialogs(
+                        new_socket,
+                        job.cancelled,
+                        delay,
+                    )
+                    and delay > 0
+                ):
                     LOGGER.info(
                         "preload delay elapsed url=%s seconds=%.1f",
                         job.url,
@@ -441,6 +448,83 @@ class BrowserController:
             ):
                 LOGGER.warning("%s", value)
 
+    def _dialog_policy(self, dialog_type: str) -> bool:
+        return dialog_type in {"alert", "beforeunload"}
+
+    def _handle_dialog_event(
+        self,
+        socket: websocket.WebSocket,
+        message: dict,
+    ):
+        params = message.get("params") or {}
+        dialog_type = str(params.get("type") or "unknown")
+        dialog_message = str(params.get("message") or "")[:200]
+        accept = self._dialog_policy(dialog_type)
+        LOGGER.info(
+            "javascript dialog handled type=%s accept=%s message=%r",
+            dialog_type,
+            accept,
+            dialog_message,
+        )
+        try:
+            self._send_socket_command(
+                socket,
+                "Page.handleJavaScriptDialog",
+                {"accept": accept},
+            )
+        except BrowserError as exc:
+            LOGGER.warning("javascript dialog response failed: %s", exc)
+
+    def _wait_with_dialogs(
+        self,
+        socket: websocket.WebSocket,
+        cancelled: threading.Event,
+        seconds: float,
+    ) -> bool:
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            if cancelled.is_set():
+                return True
+            remaining = min(0.1, max(0.01, deadline - time.monotonic()))
+            socket.settimeout(remaining)
+            try:
+                message = json.loads(socket.recv())
+            except websocket.WebSocketTimeoutException:
+                continue
+            except (TypeError, ValueError):
+                continue
+            if message.get("method") == "Page.javascriptDialogOpening":
+                self._handle_dialog_event(socket, message)
+            elif message.get("method") == "Runtime.consoleAPICalled":
+                self._log_injection_event(message)
+        return cancelled.is_set()
+
+    def handle_pending_dialogs(self):
+        socket = self._socket
+        if socket is None:
+            return
+        try:
+            socket.settimeout(0.05)
+            while True:
+                try:
+                    message = json.loads(socket.recv())
+                except websocket.WebSocketTimeoutException:
+                    return
+                if message.get("method") == "Page.javascriptDialogOpening":
+                    self._handle_dialog_event(socket, message)
+                elif message.get("method") == "Runtime.consoleAPICalled":
+                    self._log_injection_event(message)
+        except (
+            OSError,
+            TypeError,
+            ValueError,
+            websocket.WebSocketException,
+        ) as exc:
+            LOGGER.warning("active page event drain failed: %s", exc)
+        finally:
+            with contextlib.suppress(OSError, websocket.WebSocketException):
+                socket.settimeout(5)
+
     def _navigate_and_wait(
         self,
         socket: websocket.WebSocket,
@@ -491,6 +575,9 @@ class BrowserController:
                 try:
                     message = json.loads(socket.recv())
                 except websocket.WebSocketTimeoutException:
+                    continue
+                if message.get("method") == "Page.javascriptDialogOpening":
+                    self._handle_dialog_event(socket, message)
                     continue
                 if message.get("method") == "Runtime.consoleAPICalled":
                     self._log_injection_event(message)
@@ -610,6 +697,12 @@ class BrowserController:
             )
             while True:
                 message = json.loads(socket.recv())
+                if message.get("method") == "Page.javascriptDialogOpening":
+                    self._handle_dialog_event(socket, message)
+                    continue
+                if message.get("method") == "Runtime.consoleAPICalled":
+                    self._log_injection_event(message)
+                    continue
                 if message.get("id") != message_id:
                     continue
                 if "error" in message:

@@ -69,6 +69,7 @@ class AgentRunner:
             while time.monotonic() < deadline:
                 now = time.monotonic()
                 self._sync_power(config)
+                self.browser.handle_pending_dialogs()
                 self._schedule_preloads(
                     config,
                     current_index,
