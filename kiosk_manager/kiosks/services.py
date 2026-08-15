@@ -41,6 +41,21 @@ def serialize_schedule(schedule) -> str | None:
     return value or None
 
 
+def power_status(screen: Screen) -> dict:
+    pending = screen.pending_command()
+    return {
+        "power_override": screen.power_override or None,
+        "desired_power_state": screen.desired_power_state(),
+        "reported_power_state": screen.reported_power_state,
+        "reported_power_at": screen.reported_power_at,
+        "pending_command": (
+            {"id": pending.id, "command": pending.command}
+            if pending is not None
+            else None
+        ),
+    }
+
+
 def get_screen_configuration(screen: Screen):
     items = list(Page.objects.filter(screen=screen).order_by("order", "pk"))
     version_payload = [

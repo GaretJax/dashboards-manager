@@ -58,6 +58,18 @@ class ScreenAdmin(ModelAdmin):
             },
         ),
         (
+            _("Remote state").upper(),
+            {
+                "fields": [
+                    "power_override",
+                    "desired_power_state_display",
+                    "reported_power_state",
+                    "reported_power_at",
+                    "pending_agent_command_display",
+                ],
+            },
+        ),
+        (
             _("Public access").upper(),
             {
                 "fields": [
@@ -83,13 +95,24 @@ class ScreenAdmin(ModelAdmin):
         "id",
         "public_token",
         "display_url",
+        "power_override",
+        "desired_power_state_display",
+        "reported_power_state",
+        "reported_power_at",
+        "pending_agent_command_display",
         "created_at",
         "updated_at",
     ]
     ordering = ["name", "pk"]
     date_hierarchy = "created_at"
     inlines = [ScreenContentInline]
-    change_actions = ["rotate_public_token_action"]
+    change_actions = [
+        "screen_on_action",
+        "screen_off_action",
+        "follow_schedule_action",
+        "restart_agent_action",
+        "rotate_public_token_action",
+    ]
 
     @admin.display(description=_("display URL"))
     @options(desc=_("Public URL for this screen"))

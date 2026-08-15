@@ -1,3 +1,5 @@
+import json
+
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 
@@ -54,6 +56,45 @@ def test_screen_config_api_returns_ordered_pages(client):
             "preload_timeout_seconds": 30,
         },
     ]
+
+
+@pytest.mark.django_db
+def test_screen_config_api_returns_power_status(client):
+    screen = Screen.objects.create(name="Lobby")
+
+    response = client.get(f"/api/screens/{screen.public_token}/config")
+
+    payload = response.json()
+    assert payload["power_override"] is None
+    assert payload["desired_power_state"] is None
+    assert payload["reported_power_state"] == "unknown"
+    assert payload["reported_power_at"] is None
+    assert payload["pending_command"] is None
+
+
+@pytest.mark.django_db
+def test_screen_state_api_updates_report_and_acknowledges_restart(client):
+    screen = Screen.objects.create(name="Lobby")
+    command = screen.request_agent_restart()
+
+    response = client.post(
+        f"/api/screens/{screen.public_token}/state",
+        data=json.dumps(
+            {
+                "actual_power_state": "on",
+                "command_id": str(command.id),
+            }
+        ),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["reported_power_state"] == "on"
+    assert payload["reported_power_at"]
+    assert payload["pending_command"] is None
+    command.refresh_from_db()
+    assert command.acknowledged_at is not None
 
 
 @pytest.mark.django_db
