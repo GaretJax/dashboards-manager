@@ -1,5 +1,6 @@
 import logging
 import math
+import threading
 from urllib.parse import quote
 
 import httpx
@@ -132,6 +133,7 @@ class ManagerClient:
         self.manager_url = manager_url.rstrip("/")
         self.screen_token = screen_token.strip()
         self._client = httpx.Client(timeout=timeout)
+        self._lock = threading.RLock()
 
     @property
     def config_url(self) -> str:
@@ -143,13 +145,25 @@ class ManagerClient:
         token = quote(self.screen_token, safe="")
         return f"{self.manager_url}/api/screens/{token}/state"
 
+    @property
+    def status_url(self) -> str:
+        token = quote(self.screen_token, safe="")
+        return f"{self.manager_url}/api/screens/{token}/status"
+
+    @property
+    def screenshots_url(self) -> str:
+        token = quote(self.screen_token, safe="")
+        return f"{self.manager_url}/api/screens/{token}/screenshots"
+
     def close(self):
-        self._client.close()
+        with self._lock:
+            self._client.close()
 
     def fetch_config(self) -> ScreenConfig:
         try:
-            response = self._client.get(self.config_url)
-            response.raise_for_status()
+            with self._lock:
+                response = self._client.get(self.config_url)
+                response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             raise ManagerError(
                 f"manager returned HTTP {exc.response.status_code}"
@@ -239,11 +253,44 @@ class ManagerClient:
         if command_id is not None:
             payload["command_id"] = command_id
         try:
-            response = self._client.post(self.state_url, json=payload)
-            response.raise_for_status()
+            with self._lock:
+                response = self._client.post(self.state_url, json=payload)
+                response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             raise ManagerError(
                 f"manager returned HTTP {exc.response.status_code}"
             ) from exc
         except httpx.HTTPError as exc:
             raise ManagerError(f"manager state request failed: {exc}") from exc
+
+    def report_status(self, payload: dict):
+        try:
+            with self._lock:
+                response = self._client.post(self.status_url, json=payload)
+                response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise ManagerError(
+                f"manager returned HTTP {exc.response.status_code}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ManagerError(
+                f"manager status request failed: {exc}"
+            ) from exc
+
+    def upload_screenshot(self, payload: dict, image: bytes):
+        try:
+            with self._lock:
+                response = self._client.post(
+                    self.screenshots_url,
+                    data=payload,
+                    files={"image": ("screenshot.png", image, "image/png")},
+                )
+                response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise ManagerError(
+                f"manager returned HTTP {exc.response.status_code}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ManagerError(
+                f"manager screenshot request failed: {exc}"
+            ) from exc

@@ -1,9 +1,11 @@
 import logging
 import time
+from datetime import UTC, datetime
 
 from .api import ManagerClient, ManagerError, PlaylistItem, ScreenConfig
 from .browser import BrowserController, BrowserError
 from .cec import CecController, CecError
+from .telemetry import AgentTelemetry, RuntimeState
 
 LOGGER = logging.getLogger("kiosk_agent")
 
@@ -19,20 +21,38 @@ class AgentRunner:
         browser: BrowserController,
         poll_interval: float = 15,
         cec: CecController | None = None,
+        status_interval: float = 60,
+        screenshot_interval: float = 300,
     ):
         self.manager = manager
         self.browser = browser
         self.poll_interval = poll_interval
         self.cec = cec
+        self.status_interval = status_interval
+        self.screenshot_interval = screenshot_interval
         self._power_state: str | None = None
         self._last_reported_power_state: str | None = None
+        self.runtime_state = RuntimeState()
+        self.telemetry = AgentTelemetry(
+            manager,
+            self.runtime_state,
+            browser,
+            status_interval=status_interval,
+        )
+        self._last_screenshot_at: dict[int, float] = {}
 
     def run(self):
+        self.telemetry.start()
         try:
             config = self.manager.fetch_config()
+            self.runtime_state.update(
+                health_state="loading",
+                desired_power_state=config.desired_power_state or "",
+            )
             self.browser.start()
             self._run_playlist(config)
         finally:
+            self.telemetry.stop()
             self.browser.close()
             self.manager.close()
 
@@ -45,6 +65,11 @@ class AgentRunner:
         while True:
             self._sync_power(config)
             if not config.items:
+                self.runtime_state.update(
+                    health_state="degraded",
+                    health_error="screen playlist is empty",
+                    current_content_id=None,
+                )
                 LOGGER.warning("screen playlist is empty")
                 self.browser.cancel_preloads()
                 pending.clear()
@@ -70,6 +95,7 @@ class AgentRunner:
                 now = time.monotonic()
                 self._sync_power(config)
                 self.browser.handle_pending_dialogs()
+                self._maybe_capture_screenshot(item)
                 self._schedule_preloads(
                     config,
                     current_index,
@@ -120,6 +146,10 @@ class AgentRunner:
                     self.cec.port,
                     exc,
                 )
+                self.runtime_state.update(
+                    health_state="degraded",
+                    health_error=str(exc),
+                )
             else:
                 self._power_state = desired_state
                 LOGGER.info(
@@ -132,6 +162,10 @@ class AgentRunner:
             actual_state = "unknown"
         else:
             actual_state = self._power_state or config.reported_power_state
+        self.runtime_state.update(
+            desired_power_state=desired_state or "",
+            actual_power_state=actual_state,
+        )
         pending = config.pending_command
         if actual_state == self._last_reported_power_state and pending is None:
             return
@@ -149,6 +183,51 @@ class AgentRunner:
                 "manager restart command acknowledged id=%s", pending.id
             )
             raise AgentRestartRequested
+
+    def _record_page_result(self, item: PlaylistItem):
+        if self.browser.last_navigation_loaded:
+            self.runtime_state.update(
+                current_content_id=item.content_id or None,
+                last_successful_page_load_at=datetime.now(UTC),
+                health_state="healthy",
+                health_error="",
+                browser_error="",
+            )
+            return
+        self.runtime_state.update(
+            current_content_id=item.content_id or None,
+            health_state="degraded",
+            health_error="readiness timeout",
+            browser_error="readiness timeout",
+        )
+
+    def _maybe_capture_screenshot(self, item: PlaylistItem):
+        content_id = item.content_id
+        if content_id <= 0 or not self.browser.last_navigation_loaded:
+            return
+        now = time.monotonic()
+        previous = self._last_screenshot_at.get(content_id)
+        if previous is not None and now - previous < self.screenshot_interval:
+            return
+        try:
+            image = self.browser.capture_screenshot()
+        except BrowserError as exc:
+            LOGGER.warning("screenshot capture failed: %s", exc)
+            self.runtime_state.update(
+                health_state="degraded",
+                health_error=str(exc),
+                browser_error=str(exc),
+            )
+            return
+        self._last_screenshot_at[content_id] = now
+        snapshot = self.runtime_state.snapshot()
+        self.telemetry.queue_screenshot(
+            content_id,
+            image,
+            datetime.now(UTC),
+            snapshot.get("health_state", "unknown"),
+            snapshot.get("health_error", ""),
+        )
 
     def _schedule_preloads(
         self,
@@ -198,6 +277,7 @@ class AgentRunner:
     def _activate_with_recovery(self, item: PlaylistItem, key: str):
         try:
             self.browser.activate_preload(key)
+            self._record_page_result(item)
             return
         except BrowserError as exc:
             LOGGER.warning("preloaded navigation failed: %s", exc)
@@ -213,6 +293,7 @@ class AgentRunner:
                 injected_javascript_before=item.injected_javascript_before,
                 injected_javascript_after=item.injected_javascript_after,
             )
+            self._record_page_result(item)
             return
         except BrowserError as exc:
             LOGGER.warning("browser navigation failed: %s", exc)
@@ -229,6 +310,7 @@ class AgentRunner:
                     injected_javascript_before=item.injected_javascript_before,
                     injected_javascript_after=item.injected_javascript_after,
                 )
+                self._record_page_result(item)
                 return
             except BrowserError as exc:
                 LOGGER.warning("browser recovery failed: %s", exc)

@@ -52,6 +52,8 @@ def load_config(config_ref: str | Path) -> dict:
         "ephemeral_profile",
         "launch_browser",
         "poll_interval",
+        "status_interval",
+        "screenshot_interval",
         "log_level",
         "cec_port",
         "display",
@@ -86,6 +88,8 @@ def merge_config(
         "ephemeral_profile": False,
         "launch_browser": True,
         "poll_interval": 15.0,
+        "status_interval": 60.0,
+        "screenshot_interval": 300.0,
         "log_level": "INFO",
         "cec_port": None,
         "display": None,
@@ -110,6 +114,14 @@ def merge_config(
     if poll_interval < 1:
         raise ConfigError("poll_interval must be at least 1 second")
     values["poll_interval"] = poll_interval
+    for key in ("status_interval", "screenshot_interval"):
+        try:
+            interval = float(values[key])
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ConfigError(f"{key} must be numeric") from exc
+        if interval < 1:
+            raise ConfigError(f"{key} must be at least 1 second")
+        values[key] = interval
     if not isinstance(values["log_level"], str):
         raise ConfigError("log_level must be a string")
     values["log_level"] = values["log_level"].upper()

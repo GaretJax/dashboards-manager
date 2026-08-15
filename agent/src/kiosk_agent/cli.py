@@ -94,6 +94,16 @@ def main():
     default=None,
 )
 @click.option(
+    "--status-interval",
+    type=click.FloatRange(min=1),
+    default=None,
+)
+@click.option(
+    "--screenshot-interval",
+    type=click.FloatRange(min=1),
+    default=None,
+)
+@click.option(
     "--log-level",
     type=click.Choice(LOG_LEVELS, case_sensitive=False),
     default=None,
@@ -110,6 +120,8 @@ def run(
     ephemeral_profile,
     launch_browser,
     poll_interval,
+    status_interval,
+    screenshot_interval,
     log_level,
 ):
     """Launch Chromium and run screen playlist."""
@@ -126,6 +138,8 @@ def run(
                 "ephemeral_profile": ephemeral_profile,
                 "launch_browser": launch_browser,
                 "poll_interval": poll_interval,
+                "status_interval": status_interval,
+                "screenshot_interval": screenshot_interval,
                 "log_level": log_level,
             },
         )
@@ -140,6 +154,8 @@ def run(
     ephemeral_profile = values["ephemeral_profile"]
     launch_browser = values["launch_browser"]
     poll_interval = values["poll_interval"]
+    status_interval = values["status_interval"]
+    screenshot_interval = values["screenshot_interval"]
     log_level = values["log_level"]
     if profile_dir:
         profile_dir = Path(profile_dir)
@@ -182,6 +198,8 @@ def run(
             ),
             poll_interval,
             CecController(cec_port) if cec_port else None,
+            status_interval,
+            screenshot_interval,
         )
         runner.run()
     except AgentRestartRequested:
@@ -274,6 +292,9 @@ def config_command(manager, screen_token, output_format):
                             "order": item.order,
                             "preload_delay_seconds": item.preload_delay_seconds,
                             "preload_timeout_seconds": item.preload_timeout_seconds,
+                            "injected_css": item.injected_css,
+                            "injected_javascript_before": item.injected_javascript_before,
+                            "injected_javascript_after": item.injected_javascript_after,
                         }
                         for item in config.items
                     ],

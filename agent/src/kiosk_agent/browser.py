@@ -1,3 +1,4 @@
+import base64
 import contextlib
 import json
 import logging
@@ -32,6 +33,7 @@ class _PreloadJob:
     injected_css: str | None = None
     injected_javascript_before: str | None = None
     injected_javascript_after: str | None = None
+    loaded: bool = False
     target_id: str | None = None
     socket: websocket.WebSocket | None = None
     title: str | None = None
@@ -60,6 +62,7 @@ class BrowserController:
     _process: subprocess.Popen | None = field(init=False, default=None)
     _socket: websocket.WebSocket | None = field(init=False, default=None)
     _target_id: str | None = field(init=False, default=None)
+    _last_navigation_loaded: bool = field(init=False, default=False)
     _preload_jobs: dict[str, _PreloadJob] = field(init=False, factory=dict)
     _preload_lock: threading.RLock = field(init=False, factory=threading.RLock)
     _message_id: int = field(init=False, default=0)
@@ -162,6 +165,7 @@ class BrowserController:
         if job.error is not None:
             self._close_preload_target(job)
             raise job.error
+        self._last_navigation_loaded = job.loaded
         if job.cancelled.is_set() or job.socket is None or not job.target_id:
             self._close_preload_target(job)
             raise BrowserError(f"preload was cancelled: {key}")
@@ -221,6 +225,7 @@ class BrowserController:
                 job.preload_delay_seconds,
                 job.timeout_seconds,
             )
+            job.loaded = load_event_received
             if load_event_received and job.preload_delay_seconds > 0:
                 timeout_remaining = max(
                     0,
@@ -616,6 +621,35 @@ class BrowserController:
         finally:
             with contextlib.suppress(OSError, websocket.WebSocketException):
                 socket.settimeout(5)
+
+    @property
+    def last_navigation_loaded(self) -> bool:
+        return self._last_navigation_loaded
+
+    def browser_version(self) -> str:
+        try:
+            response = httpx.get(
+                f"{self.cdp_url.rstrip('/')}/json/version", timeout=2
+            )
+            response.raise_for_status()
+            version = response.json().get("Browser")
+        except (KeyError, TypeError, ValueError, httpx.HTTPError) as exc:
+            raise BrowserError(
+                f"could not query browser version: {exc}"
+            ) from exc
+        if not isinstance(version, str) or not version:
+            raise BrowserError("browser version was not reported by CDP")
+        return version
+
+    def capture_screenshot(self) -> bytes:
+        try:
+            result = self._send_command(
+                "Page.captureScreenshot",
+                {"format": "png", "fromSurface": True},
+            )
+            return base64.b64decode(result["data"], validate=True)
+        except (KeyError, TypeError, ValueError, base64.binascii.Error) as exc:
+            raise BrowserError(f"could not capture screenshot: {exc}") from exc
 
     def _wait_for_page(
         self,
