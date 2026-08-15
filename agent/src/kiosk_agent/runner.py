@@ -3,9 +3,13 @@ import time
 
 from .api import ManagerClient, ManagerError, PlaylistItem, ScreenConfig
 from .browser import BrowserController, BrowserError
-from .cec import CecController, CecError, PowerSchedule
+from .cec import CecController, CecError
 
 LOGGER = logging.getLogger("kiosk_agent")
+
+
+class AgentRestartRequested(RuntimeError):
+    """Raised after manager acknowledges a one-shot restart command."""
 
 
 class AgentRunner:
@@ -20,9 +24,8 @@ class AgentRunner:
         self.browser = browser
         self.poll_interval = poll_interval
         self.cec = cec
-        self._power_schedule_version: str | None = None
-        self._power_schedule: PowerSchedule | None = None
         self._power_state: str | None = None
+        self._last_reported_power_state: str | None = None
 
     def run(self):
         try:
@@ -100,35 +103,51 @@ class AgentRunner:
         return f"{config.version[:12]}-{position}"
 
     def _sync_power(self, config: ScreenConfig):
+        desired_state = config.desired_power_state
+        if (
+            desired_state in {"on", "off"}
+            and self.cec is not None
+            and desired_state != self._power_state
+        ):
+            cec_state = "on" if desired_state == "on" else "standby"
+            try:
+                self.cec.set_power(cec_state)
+            except CecError as exc:
+                LOGGER.warning(
+                    "CEC power command failed state=%s port=%s: %s",
+                    desired_state,
+                    self.cec.port,
+                    exc,
+                )
+            else:
+                self._power_state = desired_state
+                LOGGER.info(
+                    "CEC power state changed state=%s port=%s",
+                    desired_state,
+                    self.cec.port,
+                )
+
         if self.cec is None:
-            return
-        if self._power_schedule_version != config.version:
-            self._power_schedule = PowerSchedule(
-                config.on_schedule,
-                config.off_schedule,
-            )
-            self._power_schedule_version = config.version
-        if self._power_schedule is None:
-            return
-        desired_state = self._power_schedule.desired_state()
-        if desired_state is None or desired_state == self._power_state:
+            actual_state = "unknown"
+        else:
+            actual_state = self._power_state or config.reported_power_state
+        pending = config.pending_command
+        if actual_state == self._last_reported_power_state and pending is None:
             return
         try:
-            self.cec.set_power(desired_state)
-        except CecError as exc:
-            LOGGER.warning(
-                "CEC power command failed state=%s port=%s: %s",
-                desired_state,
-                self.cec.port,
-                exc,
+            self.manager.report_state(
+                actual_state,
+                pending.id if pending is not None else None,
             )
+        except ManagerError as exc:
+            LOGGER.warning("power state report failed: %s", exc)
             return
-        self._power_state = desired_state
-        LOGGER.info(
-            "CEC power state changed state=%s port=%s",
-            desired_state,
-            self.cec.port,
-        )
+        self._last_reported_power_state = actual_state
+        if pending is not None:
+            LOGGER.info(
+                "manager restart command acknowledged id=%s", pending.id
+            )
+            raise AgentRestartRequested
 
     def _schedule_preloads(
         self,

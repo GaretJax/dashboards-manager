@@ -19,7 +19,7 @@ from .config import ConfigError, dump_config, merge_config
 from .diagnostics import run_checks, service_unit_check
 from .display import detect_display_backend
 from .paths import ensure_profile_dir
-from .runner import AgentRunner
+from .runner import AgentRestartRequested, AgentRunner
 from .service import (
     current_display_environment,
     install_unit,
@@ -184,6 +184,8 @@ def run(
             CecController(cec_port) if cec_port else None,
         )
         runner.run()
+    except AgentRestartRequested:
+        logging.getLogger("kiosk_agent").info("agent restart requested")
     except (BrowserError, ManagerError, WaylandSetupError) as exc:
         raise click.ClickException(str(exc)) from exc
     finally:

@@ -31,10 +31,17 @@ class FakeClient:
     def __init__(self, response):
         self.response = response
         self.url = None
+        self.post_url = None
+        self.post_payload = None
         self.closed = False
 
     def get(self, url):
         self.url = url
+        return self.response
+
+    def post(self, url, json):
+        self.post_url = url
+        self.post_payload = json
         return self.response
 
     def close(self):
@@ -49,6 +56,13 @@ def fake_client(monkeypatch):
                 "version": "abc",
                 "on_schedule": "DTSTART:20260101T080000Z\nRRULE:FREQ=DAILY",
                 "off_schedule": None,
+                "power_override": "on",
+                "desired_power_state": "on",
+                "reported_power_state": "unknown",
+                "pending_command": {
+                    "id": "restart-1",
+                    "command": "restart_agent",
+                },
                 "items": [
                     {
                         "url": "https://example.test/two",
@@ -89,6 +103,19 @@ def test_manager_client_fetches_and_orders_playlist(fake_client, caplog):
     assert config.items[1].preload_delay_seconds == 0
     assert config.on_schedule is not None
     assert config.off_schedule is None
+    assert config.power_override == "on"
+    assert config.desired_power_state == "on"
+    assert config.reported_power_state == "unknown"
+    assert config.pending_command is not None
+    assert config.pending_command.id == "restart-1"
+    client.report_state("off", "restart-2")
+    assert fake_client.post_url == (
+        "https://manager.example/api/screens/token%2Fvalue/state"
+    )
+    assert fake_client.post_payload == {
+        "actual_power_state": "off",
+        "command_id": "restart-2",
+    }
     client.close()
     assert fake_client.closed is True
 

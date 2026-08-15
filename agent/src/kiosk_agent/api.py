@@ -16,6 +16,9 @@ class ManagerError(RuntimeError):
 
 DEFAULT_PRELOAD_DELAY_SECONDS = 0.0
 DEFAULT_PRELOAD_TIMEOUT_SECONDS = 30
+POWER_STATES = {"on", "off", "unknown"}
+POWER_OVERRIDES = {"on", "off"}
+RESTART_AGENT_COMMAND = "restart_agent"
 
 
 @define(frozen=True, slots=True)
@@ -28,11 +31,21 @@ class PlaylistItem:
 
 
 @define(frozen=True, slots=True)
+class PendingCommand:
+    id: str
+    command: str
+
+
+@define(frozen=True, slots=True)
 class ScreenConfig:
     version: str
     items: tuple[PlaylistItem, ...]
     on_schedule: str | None = None
     off_schedule: str | None = None
+    power_override: str | None = None
+    desired_power_state: str | None = None
+    reported_power_state: str = "unknown"
+    pending_command: PendingCommand | None = None
 
 
 def _parse_preload_delay_seconds(value) -> float:
@@ -68,6 +81,38 @@ def _parse_schedule(value) -> str | None:
     return value
 
 
+def _parse_power_state(value, *, allow_none: bool = False) -> str | None:
+    if value is None and allow_none:
+        return None
+    if not isinstance(value, str) or value not in POWER_STATES:
+        raise ValueError
+    return value
+
+
+def _parse_power_override(value) -> str | None:
+    if value in (None, ""):
+        return None
+    if not isinstance(value, str) or value not in POWER_OVERRIDES:
+        raise ValueError
+    return value
+
+
+def _parse_pending_command(value) -> PendingCommand | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError
+    command_id = value.get("id")
+    command = value.get("command")
+    if (
+        not isinstance(command_id, str)
+        or not command_id
+        or command != RESTART_AGENT_COMMAND
+    ):
+        raise ValueError
+    return PendingCommand(command_id, command)
+
+
 class ManagerClient:
     def __init__(
         self, manager_url: str, screen_token: str, timeout: float = 5
@@ -80,6 +125,11 @@ class ManagerClient:
     def config_url(self) -> str:
         token = quote(self.screen_token, safe="")
         return f"{self.manager_url}/api/screens/{token}/config"
+
+    @property
+    def state_url(self) -> str:
+        token = quote(self.screen_token, safe="")
+        return f"{self.manager_url}/api/screens/{token}/state"
 
     def close(self):
         self._client.close()
@@ -103,6 +153,18 @@ class ManagerClient:
             raw_items = payload["items"]
             on_schedule = _parse_schedule(payload.get("on_schedule"))
             off_schedule = _parse_schedule(payload.get("off_schedule"))
+            power_override = _parse_power_override(
+                payload.get("power_override")
+            )
+            desired_power_state = _parse_power_state(
+                payload.get("desired_power_state"), allow_none=True
+            )
+            reported_power_state = _parse_power_state(
+                payload.get("reported_power_state", "unknown")
+            )
+            pending_command = _parse_pending_command(
+                payload.get("pending_command")
+            )
             if not isinstance(version, str) or not isinstance(raw_items, list):
                 raise TypeError
             items = tuple(
@@ -138,6 +200,10 @@ class ManagerClient:
             tuple(sorted(items, key=lambda item: (item.order, item.url))),
             on_schedule,
             off_schedule,
+            power_override,
+            desired_power_state,
+            reported_power_state or "unknown",
+            pending_command,
         )
         LOGGER.info(
             "fetched config version=%s items=%d",
@@ -145,3 +211,23 @@ class ManagerClient:
             len(config.items),
         )
         return config
+
+    def report_state(
+        self,
+        actual_power_state: str,
+        command_id: str | None = None,
+    ):
+        if actual_power_state not in POWER_STATES:
+            raise ValueError("invalid actual power state")
+        payload = {"actual_power_state": actual_power_state}
+        if command_id is not None:
+            payload["command_id"] = command_id
+        try:
+            response = self._client.post(self.state_url, json=payload)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise ManagerError(
+                f"manager returned HTTP {exc.response.status_code}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ManagerError(f"manager state request failed: {exc}") from exc

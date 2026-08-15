@@ -1,7 +1,9 @@
 from unittest.mock import Mock
 
-from kiosk_agent.api import PlaylistItem, ScreenConfig
-from kiosk_agent.runner import AgentRunner
+import pytest
+
+from kiosk_agent.api import PendingCommand, PlaylistItem, ScreenConfig
+from kiosk_agent.runner import AgentRestartRequested, AgentRunner
 
 
 def _item(url, duration, preload_delay=0):
@@ -75,16 +77,49 @@ def test_navigation_always_preloads_with_numeric_delay():
     )
 
 
-def test_power_schedule_sends_on_command_once():
+def test_remote_power_state_sends_on_command_once():
     cec = Mock()
-    runner = AgentRunner(Mock(), Mock(), cec=cec)
+    manager = Mock()
+    runner = AgentRunner(manager, Mock(), cec=cec)
     config = ScreenConfig(
         version="version",
         items=(),
-        on_schedule="DTSTART:20000101T000000Z\nRRULE:FREQ=DAILY",
+        desired_power_state="on",
     )
 
     runner._sync_power(config)  # pyright: ignore[reportPrivateUsage]
     runner._sync_power(config)  # pyright: ignore[reportPrivateUsage]
 
     cec.set_power.assert_called_once_with("on")
+    manager.report_state.assert_called_once_with("on", None)
+
+
+def test_remote_power_state_maps_off_to_standby():
+    cec = Mock()
+    manager = Mock()
+    runner = AgentRunner(manager, Mock(), cec=cec)
+    config = ScreenConfig(
+        version="version",
+        items=(),
+        desired_power_state="off",
+    )
+
+    runner._sync_power(config)  # pyright: ignore[reportPrivateUsage]
+
+    cec.set_power.assert_called_once_with("standby")
+    manager.report_state.assert_called_once_with("off", None)
+
+
+def test_restart_command_is_acknowledged_before_exit():
+    manager = Mock()
+    runner = AgentRunner(manager, Mock())
+    config = ScreenConfig(
+        version="version",
+        items=(),
+        pending_command=PendingCommand("restart-1", "restart_agent"),
+    )
+
+    with pytest.raises(AgentRestartRequested):
+        runner._sync_power(config)  # pyright: ignore[reportPrivateUsage]
+
+    manager.report_state.assert_called_once_with("unknown", "restart-1")
