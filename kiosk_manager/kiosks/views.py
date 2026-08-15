@@ -2,7 +2,7 @@ from django.conf import settings
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, render
 
-from .models import Page, Screen
+from .models import Content, Screen
 
 
 def screen_display(request, token):
@@ -22,15 +22,18 @@ def screen_display(request, token):
     )
 
 
-def page_content(request, token, page_id):
-    page = get_object_or_404(
-        Page.objects.filter(screen__public_token=token, screen__enabled=True),
-        pk=page_id,
+def content_content(request, token, content_id):
+    content = get_object_or_404(
+        Content.objects.filter(
+            playlist_entries__screen__public_token=token,
+            playlist_entries__screen__enabled=True,
+        ),
+        pk=content_id,
     )
-    if not page.html_file:
-        raise Http404("page does not contain an HTML file")
+    if not content.html_file:
+        raise Http404("content does not contain an HTML file")
     try:
-        with page.html_file.open("rb") as uploaded_file:
+        with content.html_file.open("rb") as uploaded_file:
             content = uploaded_file.read()
     except OSError as exc:
         raise Http404("HTML file is unavailable") from exc

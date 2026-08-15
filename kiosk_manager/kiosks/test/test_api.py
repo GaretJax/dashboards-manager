@@ -5,7 +5,7 @@ from django.urls import reverse
 
 import pytest
 
-from kiosk_manager.kiosks.models import Page, Screen
+from kiosk_manager.kiosks.models import Content, Screen, ScreenContent
 
 
 def _html_file():
@@ -17,17 +17,19 @@ def _html_file():
 
 
 @pytest.mark.django_db
-def test_screen_config_api_returns_ordered_pages(client):
+def test_screen_config_api_returns_ordered_content(client):
     screen = Screen.objects.create(name="Lobby")
-    Page.objects.create(
+    second = Content.objects.create(url="https://example.com/second")
+    first = Content.objects.create(url="https://example.com/first")
+    ScreenContent.objects.create(
         screen=screen,
-        url="https://example.com/second",
+        content=second,
         duration_seconds=20,
         order=2,
     )
-    Page.objects.create(
+    ScreenContent.objects.create(
         screen=screen,
-        url="https://example.com/first",
+        content=first,
         duration_seconds=10,
         order=1,
     )
@@ -42,6 +44,7 @@ def test_screen_config_api_returns_ordered_pages(client):
     assert payload["off_schedule"] is None
     assert payload["items"] == [
         {
+            "content_id": first.pk,
             "url": "https://example.com/first",
             "duration_seconds": 10,
             "order": 1,
@@ -49,6 +52,7 @@ def test_screen_config_api_returns_ordered_pages(client):
             "preload_timeout_seconds": 30,
         },
         {
+            "content_id": second.pk,
             "url": "https://example.com/second",
             "duration_seconds": 20,
             "order": 2,
@@ -117,29 +121,26 @@ def test_screen_config_api_returns_power_schedules(client):
 
 
 @pytest.mark.django_db
-def test_screen_config_api_applies_page_preload_overrides(client):
-    screen = Screen.objects.create(
-        name="Lobby",
+def test_screen_config_api_applies_content_preload_settings(client):
+    screen = Screen.objects.create(name="Lobby")
+    inherited = Content.objects.create(
+        url="https://example.com/inherit",
         preload_delay_seconds=4,
         preload_timeout_seconds=45,
     )
-    Page.objects.create(
-        screen=screen,
-        url="https://example.com/inherit",
-        order=1,
-    )
-    Page.objects.create(
-        screen=screen,
+    override = Content.objects.create(
         url="https://example.com/override",
-        order=2,
         preload_delay_seconds=2.5,
         preload_timeout_seconds=10,
     )
+    ScreenContent.objects.create(screen=screen, content=inherited, order=1)
+    ScreenContent.objects.create(screen=screen, content=override, order=2)
 
     response = client.get(f"/api/screens/{screen.public_token}/config")
 
     assert response.json()["items"] == [
         {
+            "content_id": inherited.pk,
             "url": "https://example.com/inherit",
             "duration_seconds": 30,
             "order": 1,
@@ -147,6 +148,7 @@ def test_screen_config_api_applies_page_preload_overrides(client):
             "preload_timeout_seconds": 45,
         },
         {
+            "content_id": override.pk,
             "url": "https://example.com/override",
             "duration_seconds": 30,
             "order": 2,
@@ -157,31 +159,35 @@ def test_screen_config_api_applies_page_preload_overrides(client):
 
 
 @pytest.mark.django_db
-def test_screen_config_api_returns_internal_url_for_html_page(
+def test_screen_config_api_returns_internal_url_for_html_content(
     client, settings, tmp_path
 ):
     settings.MEDIA_ROOT = tmp_path
     screen = Screen.objects.create(name="Lobby")
-    page = Page.objects.create(screen=screen, html_file=_html_file())
+    content = Content.objects.create(html_file=_html_file())
+    ScreenContent.objects.create(screen=screen, content=content)
 
     response = client.get(f"/api/screens/{screen.public_token}/config")
 
     assert response.status_code == 200
     assert response.json()["items"][0]["url"] == (
-        f"/screens/{screen.public_token}/pages/{page.pk}/"
+        f"/screens/{screen.public_token}/contents/{content.pk}/"
     )
 
 
 @pytest.mark.django_db
-def test_html_page_endpoint_returns_uploaded_file(client, settings, tmp_path):
+def test_html_content_endpoint_returns_uploaded_file(
+    client, settings, tmp_path
+):
     settings.MEDIA_ROOT = tmp_path
     screen = Screen.objects.create(name="Lobby")
-    page = Page.objects.create(screen=screen, html_file=_html_file())
+    content = Content.objects.create(html_file=_html_file())
+    ScreenContent.objects.create(screen=screen, content=content)
 
     response = client.get(
         reverse(
-            "kiosks:page-content",
-            args=[screen.public_token, page.pk],
+            "kiosks:content-content",
+            args=[screen.public_token, content.pk],
         )
     )
 
@@ -192,13 +198,19 @@ def test_html_page_endpoint_returns_uploaded_file(client, settings, tmp_path):
 
 
 @pytest.mark.django_db
-def test_html_page_endpoint_hides_disabled_screen(client, settings, tmp_path):
+def test_html_content_endpoint_hides_disabled_screen(
+    client, settings, tmp_path
+):
     settings.MEDIA_ROOT = tmp_path
     screen = Screen.objects.create(name="Lobby", enabled=False)
-    page = Page.objects.create(screen=screen, html_file=_html_file())
+    content = Content.objects.create(html_file=_html_file())
+    ScreenContent.objects.create(screen=screen, content=content)
 
     response = client.get(
-        reverse("kiosks:page-content", args=[screen.public_token, page.pk])
+        reverse(
+            "kiosks:content-content",
+            args=[screen.public_token, content.pk],
+        )
     )
 
     assert response.status_code == 404

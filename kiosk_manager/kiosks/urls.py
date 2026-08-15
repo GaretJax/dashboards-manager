@@ -11,8 +11,8 @@ urlpatterns = [
         name="screen-display",
     ),
     path(
-        "screens/<str:token>/pages/<int:page_id>/",
-        views.page_content,
-        name="page-content",
+        "screens/<str:token>/contents/<int:content_id>/",
+        views.content_content,
+        name="content-content",
     ),
 ]

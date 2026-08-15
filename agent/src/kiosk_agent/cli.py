@@ -268,6 +268,7 @@ def config_command(manager, screen_token, output_format):
                     "off_schedule": config.off_schedule,
                     "items": [
                         {
+                            "content_id": item.content_id,
                             "url": item.url,
                             "duration_seconds": item.duration_seconds,
                             "order": item.order,

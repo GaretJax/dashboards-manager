@@ -1,10 +1,10 @@
 # Kiosk Manager
 
-Django application for managing kiosk screens and ordered page playlists.
+Django application for managing kiosk screens and ordered content playlists.
 
-Each screen has a public token URL. Its page loads an iframe, switches between
-configured URLs after their durations, and polls the read-only Ninja API for
-playlist changes.
+Each screen has a public token URL. Its display loads configured content,
+switches between playlist entries after their durations, and polls the
+read-only Ninja API for playlist changes.
 
 ## Local development
 
@@ -24,16 +24,15 @@ LB. A screen detail page exposes its public display URL. The
 token can be rotated with the **Rotate public token** detail action; existing
 URLs stop working immediately.
 
-Display API and page:
+Display API and content:
 
 - `GET /api/screens/<public-token>/config`
 - `/screens/<public-token>/`
 
-Page preloading is configured per screen and can be overridden per page.
-`preload_delay_seconds` starts loading before scheduled display;
-`preload_timeout_seconds` displays page after timeout from request start,
-regardless of load state or delay. Pages can use external URLs or one uploaded
-self-contained HTML file.
+Content owns preloading configuration. `preload_delay_seconds` starts loading
+before display; `preload_timeout_seconds` displays content after timeout from
+request start, regardless of load state or delay. Content can use external URLs
+or one uploaded self-contained HTML file and can be reused across screens.
 
 Useful commands:
 

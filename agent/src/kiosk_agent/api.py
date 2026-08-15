@@ -28,6 +28,7 @@ class PlaylistItem:
     order: int
     preload_delay_seconds: float
     preload_timeout_seconds: float
+    content_id: int = 0
 
 
 @define(frozen=True, slots=True)
@@ -184,6 +185,7 @@ class ManagerClient:
                             DEFAULT_PRELOAD_TIMEOUT_SECONDS,
                         )
                     ),
+                    int(item.get("content_id", 0)),
                 )
                 for item in raw_items
             )

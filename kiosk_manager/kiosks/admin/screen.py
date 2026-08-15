@@ -27,6 +27,43 @@ class ScreenContentInline(admin.TabularInline):
     verbose_name_plural = _("screen content")
 
 
+class ContentAdmin(ModelAdmin):
+    fieldsets = [
+        (
+            _("Content").upper(),
+            {
+                "fields": [
+                    "id",
+                    "url",
+                    "html_file",
+                    "preload_delay_seconds",
+                    "preload_timeout_seconds",
+                ],
+            },
+        ),
+        (
+            _("Timestamps").upper(),
+            {
+                "fields": [
+                    "created_at",
+                    "updated_at",
+                ],
+            },
+        ),
+    ]
+    list_display = ["source_display", "preload_delay_seconds", "updated_at"]
+    list_filter = ["created_at", "updated_at"]
+    search_fields = ["url", "html_file"]
+    readonly_fields = ["id", "created_at", "updated_at"]
+    ordering = ["-updated_at", "pk"]
+    date_hierarchy = "created_at"
+
+    @admin.display(description=_("source"))
+    @options(desc=_("URL or uploaded HTML file"))
+    def source_display(self, content):
+        return str(content)
+
+
 class ScreenAdmin(ModelAdmin):
     fieldsets = [
         (
@@ -45,15 +82,6 @@ class ScreenAdmin(ModelAdmin):
                 "fields": [
                     "on_schedule",
                     "off_schedule",
-                ],
-            },
-        ),
-        (
-            _("Preloading").upper(),
-            {
-                "fields": [
-                    "preload_delay_seconds",
-                    "preload_timeout_seconds",
                 ],
             },
         ),
@@ -90,7 +118,12 @@ class ScreenAdmin(ModelAdmin):
     ]
     list_display = ["name", "enabled", "display_url", "updated_at"]
     list_filter = ["enabled", "created_at", "updated_at"]
-    search_fields = ["name", "public_token", "pages__url", "pages__html_file"]
+    search_fields = [
+        "name",
+        "public_token",
+        "playlist_entries__content__url",
+        "playlist_entries__content__html_file",
+    ]
     readonly_fields = [
         "id",
         "public_token",

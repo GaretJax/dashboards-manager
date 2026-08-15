@@ -26,7 +26,6 @@ def test_screen_admin_exposes_rotate_token_detail_action(admin_client):
     assert [title for title, _options in ScreenAdmin.fieldsets] == [
         "SCREEN",
         "POWER SCHEDULE",
-        "PRELOADING",
         "REMOTE STATE",
         "PUBLIC ACCESS",
         "TIMESTAMPS",

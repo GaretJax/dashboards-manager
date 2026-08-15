@@ -4,36 +4,27 @@ from typing import cast
 
 from django.conf import settings
 
-from .models import Page, Screen
+from .models import Content, Screen, ScreenContent
 
 
-def effective_preload_delay_seconds(screen: Screen, page: Page) -> float:
-    value = (
-        page.preload_delay_seconds
-        if page.preload_delay_seconds is not None
-        else screen.preload_delay_seconds
-    )
+def effective_preload_delay_seconds(content: Content) -> float:
     try:
-        return float(value)
+        return float(content.preload_delay_seconds)
     except (TypeError, ValueError, OverflowError) as exc:
         raise ValueError("invalid preload delay") from exc
 
 
-def effective_preload_timeout_seconds(screen: Screen, page: Page) -> int:
-    return (
-        page.preload_timeout_seconds
-        if page.preload_timeout_seconds is not None
-        else screen.preload_timeout_seconds
-    )
+def effective_preload_timeout_seconds(content: Content) -> int:
+    return cast(int, content.preload_timeout_seconds)
 
 
-def page_url(screen: Screen, page: Page) -> str:
-    if page.html_file:
+def content_url(screen: Screen, content: Content) -> str:
+    if content.html_file:
         return (
             f"{settings.SITE_BASE_PATH}/screens/{screen.public_token}/"
-            f"pages/{page.pk}/"
+            f"contents/{content.pk}/"
         )
-    return str(page.url)
+    return str(content.url)
 
 
 def serialize_schedule(schedule) -> str | None:
@@ -57,20 +48,25 @@ def power_status(screen: Screen) -> dict:
 
 
 def get_screen_configuration(screen: Screen):
-    items = list(Page.objects.filter(screen=screen).order_by("order", "pk"))
+    entries = list(
+        ScreenContent.objects.filter(screen=screen)
+        .select_related("content")
+        .order_by("order", "pk")
+    )
     version_payload = [
         {
-            "url": page_url(screen, item),
-            "duration_seconds": cast(int, item.duration_seconds),
-            "order": cast(int, item.order),
+            "content_id": entry.content_id,
+            "url": content_url(screen, entry.content),
+            "duration_seconds": cast(int, entry.duration_seconds),
+            "order": cast(int, entry.order),
             "preload_delay_seconds": effective_preload_delay_seconds(
-                screen, item
+                entry.content
             ),
             "preload_timeout_seconds": effective_preload_timeout_seconds(
-                screen, item
+                entry.content
             ),
         }
-        for item in items
+        for entry in entries
     ]
     version_payload.extend(
         [
@@ -85,4 +81,4 @@ def get_screen_configuration(screen: Screen):
             separators=(",", ":"),
         ).encode("utf-8")
     ).hexdigest()
-    return version, items
+    return version, entries

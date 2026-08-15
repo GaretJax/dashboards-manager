@@ -5,11 +5,16 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 
 import pytest
 
-from kiosk_manager.kiosks.models import Page, Screen, ScreenCommand
+from kiosk_manager.kiosks.models import (
+    Content,
+    Screen,
+    ScreenCommand,
+    ScreenContent,
+)
 from kiosk_manager.kiosks.services import get_screen_configuration
 
 
-def _page_file(name="page.html", content=b"<h1>Hello</h1>"):
+def _content_file(name="content.html", content=b"<h1>Hello</h1>"):
     return SimpleUploadedFile(name, content, content_type="text/html")
 
 
@@ -33,17 +38,19 @@ def test_screen_rotates_public_token():
 
 
 @pytest.mark.django_db
-def test_pages_are_ordered_and_configuration_has_version():
+def test_playlist_is_ordered_and_configuration_has_version():
     screen = Screen.objects.create(name="Lobby")
-    second = Page.objects.create(
+    second_content = Content.objects.create(url="https://example.com/second")
+    first_content = Content.objects.create(url="https://example.com/first")
+    second = ScreenContent.objects.create(
         screen=screen,
-        url="https://example.com/second",
+        content=second_content,
         duration_seconds=20,
         order=2,
     )
-    first = Page.objects.create(
+    first = ScreenContent.objects.create(
         screen=screen,
-        url="https://example.com/first",
+        content=first_content,
         duration_seconds=10,
         order=1,
     )
@@ -55,79 +62,81 @@ def test_pages_are_ordered_and_configuration_has_version():
 
 
 @pytest.mark.django_db
-def test_page_requires_url_xor_html_file():
-    screen = Screen.objects.create(name="Lobby")
-
+def test_content_requires_url_xor_html_file():
     with pytest.raises(ValidationError):
-        Page(screen=screen, order=1).full_clean()
+        Content().full_clean()
     with pytest.raises(ValidationError):
-        Page(
-            screen=screen,
+        Content(
             url="https://example.com",
-            html_file=_page_file(),
-            order=1,
+            html_file=_content_file(),
         ).full_clean()
 
-    page = Page(screen=screen, html_file=_page_file(), order=1)
-    page.full_clean()
-    assert page.html_file.name == "page.html"
+    content = Content(html_file=_content_file())
+    content.full_clean()
+    assert content.html_file.name == "content.html"
 
 
 @pytest.mark.django_db
-def test_page_rejects_non_html_upload():
-    screen = Screen.objects.create(name="Lobby")
-    page = Page(
-        screen=screen,
+def test_content_rejects_non_html_upload():
+    content = Content(
         html_file=SimpleUploadedFile("page.txt", b"hello"),
     )
 
     with pytest.raises(ValidationError):
-        page.full_clean()
+        content.full_clean()
 
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("value", [-1, "-1"])
-def test_page_rejects_invalid_preload_delay(value):
-    screen = Screen.objects.create(name="Lobby")
-    page = Page(
-        screen=screen,
+def test_content_rejects_invalid_preload_delay(value):
+    content = Content(
         url="https://example.com",
         preload_delay_seconds=value,
     )
 
     with pytest.raises(ValidationError):
-        page.full_clean()
+        content.full_clean()
 
 
 @pytest.mark.django_db
-def test_page_requires_positive_duration():
+def test_playlist_entry_requires_positive_duration():
     screen = Screen.objects.create(name="Lobby")
-    page = Page(
+    content = Content.objects.create(url="https://example.com")
+    entry = ScreenContent(
         screen=screen,
-        url="https://example.com",
+        content=content,
         duration_seconds=0,
         order=1,
     )
 
     with pytest.raises(ValidationError):
-        page.full_clean()
+        entry.full_clean()
 
 
 @pytest.mark.django_db
-def test_page_order_is_unique_per_screen():
+def test_playlist_order_is_unique_per_screen():
     screen = Screen.objects.create(name="Lobby")
-    Page.objects.create(
-        screen=screen,
-        url="https://example.com/first",
-        order=1,
-    )
+    first = Content.objects.create(url="https://example.com/first")
+    second = Content.objects.create(url="https://example.com/second")
+    ScreenContent.objects.create(screen=screen, content=first, order=1)
 
     with pytest.raises(ValidationError):
-        Page(
+        ScreenContent(
             screen=screen,
-            url="https://example.com/second",
+            content=second,
             order=1,
         ).validate_constraints()
+
+
+@pytest.mark.django_db
+def test_same_content_can_repeat_in_playlist():
+    screen = Screen.objects.create(name="Lobby")
+    content = Content.objects.create(url="https://example.com")
+
+    ScreenContent.objects.create(screen=screen, content=content, order=1)
+    ScreenContent.objects.create(screen=screen, content=content, order=2)
+
+    assert screen.playlist_entries.count() == 2
 
 
 @pytest.mark.django_db
