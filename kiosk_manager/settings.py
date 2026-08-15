@@ -1,5 +1,6 @@
 import os
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import dj_database_url
@@ -158,7 +159,13 @@ CELERY_BEAT_SCHEDULE_FILENAME = str(
     BASE_DIR / ".artifacts" / "celerybeat-schedule"
 )
 CELERY_TIMEZONE = TIME_ZONE
-CELERY_BEAT_SCHEDULE = {}
+EVENT_RETENTION_DAYS = _env_int("EVENT_RETENTION_DAYS", 30)
+CELERY_BEAT_SCHEDULE = {
+    "delete-expired-kiosk-events": {
+        "task": "kiosk_manager.kiosks.tasks.delete_expired_events",
+        "schedule": timedelta(days=1),
+    },
+}
 
 ADMIN_SITE_HEADER = "Kiosk Manager Administration"
 ADMIN_SITE_TITLE = "Kiosk Manager Admin"

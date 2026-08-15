@@ -43,8 +43,14 @@ class AgentRunner:
 
     def run(self):
         self.telemetry.start()
+        self.telemetry.emit("agent_started", "INFO", "Agent started")
         try:
             config = self.manager.fetch_config()
+            self.telemetry.emit(
+                "config_fetched",
+                "INFO",
+                "Initial screen configuration fetched",
+            )
             self.runtime_state.update(
                 health_state="loading",
                 desired_power_state=config.desired_power_state or "",
@@ -69,6 +75,12 @@ class AgentRunner:
                     health_state="degraded",
                     health_error="screen playlist is empty",
                     current_content_id=None,
+                )
+                self.telemetry.emit(
+                    "healthy",
+                    "WARNING",
+                    "Screen playlist is empty",
+                    fingerprint="empty_playlist",
                 )
                 LOGGER.warning("screen playlist is empty")
                 self.browser.cancel_preloads()
@@ -150,6 +162,12 @@ class AgentRunner:
                     health_state="degraded",
                     health_error=str(exc),
                 )
+                self.telemetry.emit(
+                    "display_control_failed",
+                    "WARNING",
+                    "CEC power command failed",
+                    details={"state": desired_state},
+                )
             else:
                 self._power_state = desired_state
                 LOGGER.info(
@@ -193,12 +211,26 @@ class AgentRunner:
                 health_error="",
                 browser_error="",
             )
+            self.telemetry.emit(
+                "page_loaded",
+                "INFO",
+                "Content loaded successfully",
+                content_id=item.content_id or None,
+                url=item.url,
+            )
             return
         self.runtime_state.update(
             current_content_id=item.content_id or None,
             health_state="degraded",
             health_error="readiness timeout",
             browser_error="readiness timeout",
+        )
+        self.telemetry.emit(
+            "readiness_timeout",
+            "WARNING",
+            "Content did not become ready before timeout",
+            content_id=item.content_id or None,
+            url=item.url,
         )
 
     def _maybe_capture_screenshot(self, item: PlaylistItem):
@@ -252,6 +284,13 @@ class AgentRunner:
             if key in pending:
                 continue
             pending.add(key)
+            self.telemetry.emit(
+                "preloading",
+                "DEBUG",
+                "Content preload started",
+                content_id=item.content_id or None,
+                url=item.url,
+            )
             self.browser.start_preload(
                 key,
                 item.url,
@@ -269,8 +308,20 @@ class AgentRunner:
 
     def _poll(self, previous: ScreenConfig) -> ScreenConfig:
         try:
-            return self.manager.fetch_config()
+            config = self.manager.fetch_config()
+            self.telemetry.emit(
+                "config_fetched",
+                "INFO",
+                "Screen configuration fetched",
+            )
+            return config
         except ManagerError as exc:
+            self.telemetry.emit(
+                "config_fetch_failed",
+                "WARNING",
+                "Screen configuration fetch failed",
+                fingerprint="config_fetch_failed",
+            )
             LOGGER.warning("configuration poll failed: %s", exc)
             return previous
 
@@ -284,6 +335,14 @@ class AgentRunner:
         self._navigate_with_recovery(item)
 
     def _navigate_with_recovery(self, item: PlaylistItem):
+        content_id = item.content_id or None
+        self.telemetry.emit(
+            "loading",
+            "DEBUG",
+            "Content navigation started",
+            content_id=content_id,
+            url=item.url,
+        )
         try:
             self.browser.navigate(
                 item.url,
@@ -296,6 +355,14 @@ class AgentRunner:
             self._record_page_result(item)
             return
         except BrowserError as exc:
+            self.telemetry.emit(
+                "navigation_failed",
+                "WARNING",
+                "Content navigation failed",
+                content_id=content_id,
+                url=item.url,
+                details={"error": str(exc)[:200]},
+            )
             LOGGER.warning("browser navigation failed: %s", exc)
 
         self.browser.close()

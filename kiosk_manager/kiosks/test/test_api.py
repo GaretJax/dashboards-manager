@@ -7,6 +7,7 @@ import pytest
 
 from kiosk_manager.kiosks.models import (
     Content,
+    Event,
     Screen,
     ScreenContent,
     ScreenContentScreenshot,
@@ -329,6 +330,46 @@ def test_screenshot_api_keeps_newest_screen_content_image(
     )
     assert screenshot.health_state == "healthy"
     assert screenshot.image.read() == png
+
+
+@pytest.mark.django_db
+def test_event_api_accepts_high_level_batch(client):
+    screen = Screen.objects.create(name="Lobby")
+    content = Content.objects.create(url="https://example.com/dashboard")
+    ScreenContent.objects.create(screen=screen, content=content)
+
+    response = client.post(
+        f"/api/screens/{screen.public_token}/events",
+        data=json.dumps(
+            {
+                "events": [
+                    {
+                        "code": "navigation_failed",
+                        "level": "WARNING",
+                        "message": "navigation failed",
+                        "content_id": content.pk,
+                        "url": "https://example.com/dashboard?token=secret",
+                        "fingerprint": "navigation_failed:content",
+                        "details": {"retry_count": 2},
+                    },
+                    {
+                        "code": "agent_started",
+                        "level": "INFO",
+                        "message": "Agent started",
+                    },
+                ]
+            }
+        ),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"accepted": 2}
+    event = Event.objects.get(code="navigation_failed")
+    assert event.screen_id == screen.pk
+    assert event.content_id == content.pk
+    assert "token" not in event.url
+    assert event.received_at is not None
 
 
 @pytest.mark.django_db

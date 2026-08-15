@@ -52,7 +52,6 @@ class EventLevel(models.TextChoices):
     CRITICAL = "CRITICAL", _("critical")
 
 
-COMMAND_RESTART_AGENT = ScreenCommandChoice.RESTART_AGENT
 HEALTH_UNKNOWN = HealthState.UNKNOWN
 HEALTH_HEALTHY = HealthState.HEALTHY
 HEALTH_DEGRADED = HealthState.DEGRADED

@@ -10,6 +10,7 @@ from . import __version__
 from .api import ManagerClient, ManagerError
 from .browser import BrowserController, BrowserError
 from .display import probe_display
+from .events import AgentEventReporter
 
 
 @define(slots=True)
@@ -66,6 +67,7 @@ class AgentTelemetry:
         self.state = state
         self.browser = browser
         self.status_interval = status_interval
+        self.events = AgentEventReporter(manager)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._pending: dict[int, _PendingScreenshot] = {}
@@ -86,6 +88,9 @@ class AgentTelemetry:
         if self._thread is not None:
             self._thread.join(timeout=5)
             self._thread = None
+
+    def emit(self, code: str, level: str, message: str, **context):
+        self.events.emit(code, level, message, **context)
 
     def queue_screenshot(
         self,
@@ -114,6 +119,7 @@ class AgentTelemetry:
                 self._report_status()
                 next_status = now + self.status_interval
             self._upload_pending(now)
+            self.events.flush()
             self._stop.wait(0.5)
 
     def _report_status(self):

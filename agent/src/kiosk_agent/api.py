@@ -155,6 +155,11 @@ class ManagerClient:
         token = quote(self.screen_token, safe="")
         return f"{self.manager_url}/api/screens/{token}/screenshots"
 
+    @property
+    def events_url(self) -> str:
+        token = quote(self.screen_token, safe="")
+        return f"{self.manager_url}/api/screens/{token}/events"
+
     def close(self):
         with self._lock:
             self._client.close()
@@ -293,4 +298,21 @@ class ManagerClient:
         except httpx.HTTPError as exc:
             raise ManagerError(
                 f"manager screenshot request failed: {exc}"
+            ) from exc
+
+    def report_events(self, events: list[dict]):
+        try:
+            with self._lock:
+                response = self._client.post(
+                    self.events_url,
+                    json={"events": events},
+                )
+                response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise ManagerError(
+                f"manager returned HTTP {exc.response.status_code}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ManagerError(
+                f"manager events request failed: {exc}"
             ) from exc

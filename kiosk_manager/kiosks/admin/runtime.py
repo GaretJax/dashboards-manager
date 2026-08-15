@@ -4,7 +4,7 @@ from django.utils.translation import gettext_lazy as _
 
 from adminutils import ModelAdmin, options
 
-from ..models import ScreenRuntimeStatus
+from ..models import Event, ScreenRuntimeStatus
 
 
 class ScreenRuntimeStatusAdmin(ModelAdmin):
@@ -24,6 +24,37 @@ class ScreenRuntimeStatusAdmin(ModelAdmin):
     ]
     ordering = ["-last_check_in", "screen_id"]
     date_hierarchy = "last_check_in"
+
+
+class EventAdmin(ModelAdmin):
+    list_display = [
+        "screen",
+        "level",
+        "code",
+        "content",
+        "message",
+        "occurred_at",
+        "received_at",
+    ]
+    list_filter = ["level", "code", "screen", "received_at"]
+    search_fields = [
+        "screen__name",
+        "content__url",
+        "message",
+        "fingerprint",
+    ]
+    readonly_fields = [field.name for field in Event._meta.fields]
+    ordering = ["-received_at", "-pk"]
+    date_hierarchy = "received_at"
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 class ScreenContentScreenshotAdmin(ModelAdmin):
