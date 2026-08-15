@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.messages",
+    "django_celery_results",
     "django.contrib.sessions",
     "django.contrib.staticfiles",
     "ninja",
@@ -141,6 +142,24 @@ STORAGES = {
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+CELERY_BROKER_URL = os.environ.get(
+    "CELERY_BROKER_URL",
+    os.environ.get("BROKER_URL", "amqp://kiosk:kiosk@rabbitmq:5672//"),
+)
+CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "django-db")
+CELERY_BROKER_CONNECTION_MAX_RETRIES = None
+CELERY_TASK_ACKS_LATE = True
+CELERY_TASK_TRACK_STARTED = True
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 128
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_WORKER_ENABLE_REMOTE_CONTROL = False
+CELERY_WORKER_CANCEL_LONG_RUNNING_TASKS_ON_CONNECTION_LOSS = True
+CELERY_BEAT_SCHEDULE_FILENAME = str(
+    BASE_DIR / ".artifacts" / "celerybeat-schedule"
+)
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_BEAT_SCHEDULE = {}
+
 ADMIN_SITE_HEADER = "Kiosk Manager Administration"
 ADMIN_SITE_TITLE = "Kiosk Manager Admin"
 ADMIN_INDEX_TITLE = "Administration"
@@ -177,13 +196,14 @@ SENTRY_TRACES_SAMPLE_RATE = _env_float("SENTRY_TRACES_SAMPLE_RATE", 0)
 SENTRY_PROFILES_SAMPLE_RATE = _env_float("SENTRY_PROFILES_SAMPLE_RATE", 0)
 if SENTRY_DSN:
     import sentry_sdk
+    from sentry_sdk.integrations.celery import CeleryIntegration
     from sentry_sdk.integrations.django import DjangoIntegration
 
     sentry_sdk.init(
         dsn=SENTRY_DSN,
         environment=SENTRY_ENVIRONMENT,
         release=os.environ.get("GIT_COMMIT", os.environ.get("GIT_BRANCH")),
-        integrations=[DjangoIntegration()],
+        integrations=[DjangoIntegration(), CeleryIntegration()],
         send_default_pii=False,
         traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
         profiles_sample_rate=SENTRY_PROFILES_SAMPLE_RATE,

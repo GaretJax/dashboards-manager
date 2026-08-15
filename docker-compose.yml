@@ -1,3 +1,4 @@
+---
 x-app: &app
   build:
     context: .
@@ -13,6 +14,8 @@ x-app: &app
   depends_on:
     db:
       condition: service_healthy
+    rabbitmq:
+      condition: service_healthy
 
 services:
   web:
@@ -27,6 +30,14 @@ services:
       - default
       - lb
 
+  worker:
+    <<: *app
+    command: ./aldryn-celery.sh worker
+
+  beat:
+    <<: *app
+    command: ./aldryn-celery.sh beat
+
   test:
     <<: *app
     command: pytest
@@ -36,6 +47,18 @@ services:
       SECURE_COOKIES: "false"
     profiles:
       - tools
+
+  rabbitmq:
+    image: rabbitmq:4.3-alpine
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: kiosk
+      RABBITMQ_DEFAULT_PASS: kiosk
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
 
   db:
     image: postgres:18-alpine

@@ -52,6 +52,7 @@ COPY --from=dependencies --chown=app:app /app/.venv /app/.venv
 COPY --from=application --chown=app:app /app/kiosk_manager /app/kiosk_manager
 COPY --from=application --chown=app:app /app/manage.py /app/manage.py
 COPY --from=application --chown=app:app /app/runserver.sh /app/runserver.sh
+COPY --from=application --chown=app:app /app/aldryn-celery.sh /app/aldryn-celery.sh
 COPY --from=application --chown=app:app /app/templates /app/templates
 COPY --from=application --chown=app:app /app/staticfiles /app/staticfiles
 RUN mkdir -p /app/media && chown -R app:app /app/media
