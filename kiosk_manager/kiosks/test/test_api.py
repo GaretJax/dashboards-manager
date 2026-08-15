@@ -50,6 +50,9 @@ def test_screen_config_api_returns_ordered_content(client):
             "order": 1,
             "preload_delay_seconds": 0.0,
             "preload_timeout_seconds": 30,
+            "injected_css": None,
+            "injected_javascript_before": None,
+            "injected_javascript_after": None,
         },
         {
             "content_id": second.pk,
@@ -58,6 +61,9 @@ def test_screen_config_api_returns_ordered_content(client):
             "order": 2,
             "preload_delay_seconds": 0.0,
             "preload_timeout_seconds": 30,
+            "injected_css": None,
+            "injected_javascript_before": None,
+            "injected_javascript_after": None,
         },
     ]
 
@@ -146,6 +152,9 @@ def test_screen_config_api_applies_content_preload_settings(client):
             "order": 1,
             "preload_delay_seconds": 4.0,
             "preload_timeout_seconds": 45,
+            "injected_css": None,
+            "injected_javascript_before": None,
+            "injected_javascript_after": None,
         },
         {
             "content_id": override.pk,
@@ -154,8 +163,30 @@ def test_screen_config_api_applies_content_preload_settings(client):
             "order": 2,
             "preload_delay_seconds": 2.5,
             "preload_timeout_seconds": 10,
+            "injected_css": None,
+            "injected_javascript_before": None,
+            "injected_javascript_after": None,
         },
     ]
+
+
+@pytest.mark.django_db
+def test_screen_config_api_returns_content_injections(client):
+    screen = Screen.objects.create(name="Lobby")
+    content = Content.objects.create(
+        url="https://example.com",
+        injected_css="body { display: none; }",
+        injected_javascript_before="window.before = true;",
+        injected_javascript_after="window.after = true;",
+    )
+    ScreenContent.objects.create(screen=screen, content=content)
+
+    response = client.get(f"/api/screens/{screen.public_token}/config")
+
+    item = response.json()["items"][0]
+    assert item["injected_css"] == "body { display: none; }"
+    assert item["injected_javascript_before"] == "window.before = true;"
+    assert item["injected_javascript_after"] == "window.after = true;"
 
 
 @pytest.mark.django_db

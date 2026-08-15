@@ -177,6 +177,9 @@ class AgentRunner:
                 item.url,
                 item.preload_timeout_seconds,
                 item.preload_delay_seconds,
+                item.injected_css,
+                item.injected_javascript_before,
+                item.injected_javascript_after,
             )
             LOGGER.info(
                 "scheduled preload url=%s lead_seconds=%.1f",
@@ -205,6 +208,9 @@ class AgentRunner:
                 item.url,
                 preload_delay_seconds=item.preload_delay_seconds,
                 preload_timeout_seconds=item.preload_timeout_seconds,
+                injected_css=item.injected_css,
+                injected_javascript_before=item.injected_javascript_before,
+                injected_javascript_after=item.injected_javascript_after,
             )
             return
         except BrowserError as exc:
@@ -218,6 +224,9 @@ class AgentRunner:
                     item.url,
                     preload_delay_seconds=item.preload_delay_seconds,
                     preload_timeout_seconds=item.preload_timeout_seconds,
+                    injected_css=item.injected_css,
+                    injected_javascript_before=item.injected_javascript_before,
+                    injected_javascript_after=item.injected_javascript_after,
                 )
                 return
             except BrowserError as exc:

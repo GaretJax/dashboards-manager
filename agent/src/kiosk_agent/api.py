@@ -29,6 +29,9 @@ class PlaylistItem:
     preload_delay_seconds: float
     preload_timeout_seconds: float
     content_id: int = 0
+    injected_css: str | None = None
+    injected_javascript_before: str | None = None
+    injected_javascript_after: str | None = None
 
 
 @define(frozen=True, slots=True)
@@ -94,6 +97,14 @@ def _parse_power_override(value) -> str | None:
     if value in (None, ""):
         return None
     if not isinstance(value, str) or value not in POWER_OVERRIDES:
+        raise ValueError
+    return value
+
+
+def _parse_injection(value) -> str | None:
+    if value in (None, ""):
+        return None
+    if not isinstance(value, str) or len(value) > 65536:
         raise ValueError
     return value
 
@@ -186,6 +197,9 @@ class ManagerClient:
                         )
                     ),
                     int(item.get("content_id", 0)),
+                    _parse_injection(item.get("injected_css")),
+                    _parse_injection(item.get("injected_javascript_before")),
+                    _parse_injection(item.get("injected_javascript_after")),
                 )
                 for item in raw_items
             )

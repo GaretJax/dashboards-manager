@@ -108,6 +108,39 @@ def test_preload_finishes_on_load_event(caplog, tmp_path):
     assert "result=loaded" in caplog.text
 
 
+def test_content_injections_install_before_navigation(monkeypatch, tmp_path):
+    controller = BrowserController(
+        browser="chromium",
+        cdp_url="http://127.0.0.1:9222",
+        profile_dir=tmp_path,
+    )
+    calls = []
+    monkeypatch.setattr(
+        BrowserController,
+        "_send_socket_command",
+        lambda _controller, _socket, method, params=None: calls.append(
+            (method, params)
+        ),
+    )
+
+    controller._install_injections(  # pyright: ignore[reportPrivateUsage]
+        Mock(),
+        "body { color: red; }",
+        "window.beforeRan = true;",
+        "window.afterRan = true;",
+    )
+
+    assert [method for method, _params in calls] == [
+        "Page.addStyleToEvaluateOnNewDocument",
+        "Page.addScriptToEvaluateOnNewDocument",
+    ]
+    script = calls[1][1]["source"]
+    assert "window.beforeRan = true;" in script
+    assert "window.afterRan = true;" in script
+    assert "javascript_before" in script
+    assert "javascript_after" in script
+
+
 def test_numeric_preload_logs_load_event(caplog, tmp_path):
     controller = BrowserController(
         browser="chromium",

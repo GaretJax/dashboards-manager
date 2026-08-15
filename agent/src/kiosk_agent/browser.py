@@ -29,6 +29,9 @@ class _PreloadJob:
     url: str
     timeout_seconds: float
     preload_delay_seconds: float = 0
+    injected_css: str | None = None
+    injected_javascript_before: str | None = None
+    injected_javascript_after: str | None = None
     target_id: str | None = None
     socket: websocket.WebSocket | None = None
     title: str | None = None
@@ -123,6 +126,9 @@ class BrowserController:
         url: str,
         timeout_seconds: float,
         preload_delay_seconds: float = 0,
+        injected_css: str | None = None,
+        injected_javascript_before: str | None = None,
+        injected_javascript_after: str | None = None,
     ):
         with self._preload_lock:
             if key in self._preload_jobs:
@@ -132,6 +138,9 @@ class BrowserController:
                 url,
                 timeout_seconds,
                 preload_delay_seconds=preload_delay_seconds,
+                injected_css=injected_css,
+                injected_javascript_before=injected_javascript_before,
+                injected_javascript_after=injected_javascript_after,
             )
             self._preload_jobs[key] = job
         threading.Thread(
@@ -196,6 +205,14 @@ class BrowserController:
             job.target_id = target_id
             job.socket = new_socket
             self._send_socket_command(new_socket, "Page.enable")
+            if job.injected_javascript_before or job.injected_javascript_after:
+                self._send_socket_command(new_socket, "Runtime.enable")
+            self._install_injections(
+                new_socket,
+                job.injected_css,
+                job.injected_javascript_before,
+                job.injected_javascript_after,
+            )
             self._enable_focus_emulation(new_socket)
             request_started = time.monotonic()
             load_event_received = self._navigate_and_wait(
@@ -273,6 +290,9 @@ class BrowserController:
         *,
         preload_delay_seconds: float = 0,
         preload_timeout_seconds: float = 30,
+        injected_css: str | None = None,
+        injected_javascript_before: str | None = None,
+        injected_javascript_after: str | None = None,
     ):
         if self._socket is None:
             raise BrowserError("browser CDP connection is not open")
@@ -287,6 +307,9 @@ class BrowserController:
             url,
             preload_timeout_seconds,
             delay,
+            injected_css,
+            injected_javascript_before,
+            injected_javascript_after,
         )
         self.activate_preload("__direct__")
 
@@ -359,6 +382,65 @@ class BrowserController:
             {"enabled": True},
         )
 
+    def _install_injections(
+        self,
+        socket: websocket.WebSocket,
+        injected_css: str | None,
+        injected_javascript_before: str | None,
+        injected_javascript_after: str | None,
+    ):
+        if injected_css:
+            try:
+                self._send_socket_command(
+                    socket,
+                    "Page.addStyleToEvaluateOnNewDocument",
+                    {"source": injected_css},
+                )
+            except BrowserError as exc:
+                LOGGER.warning("CSS injection installation failed: %s", exc)
+
+        if not injected_javascript_before and not injected_javascript_after:
+            return
+        source_parts = [
+            "(() => {",
+            "const run = (source, phase) => {",
+            "try { (new Function(source)).call(window); }",
+            "catch (error) {",
+            "const detail = error && (error.stack || error.message) || String(error);",
+            "console.error('[kiosk-agent-injection-error] ' + phase + ': ' + detail);",
+            "}",
+            "};",
+        ]
+        if injected_javascript_before:
+            source_parts.append(
+                f"run({json.dumps(injected_javascript_before)}, "
+                "'javascript_before');"
+            )
+        if injected_javascript_after:
+            source_parts.append(
+                f"window.addEventListener('load', () => run({json.dumps(injected_javascript_after)}, "
+                "'javascript_after'), {once: true});"
+            )
+        source_parts.append("})();")
+        try:
+            self._send_socket_command(
+                socket,
+                "Page.addScriptToEvaluateOnNewDocument",
+                {"source": "\n".join(source_parts)},
+            )
+        except BrowserError as exc:
+            LOGGER.warning("JavaScript injection installation failed: %s", exc)
+
+    @staticmethod
+    def _log_injection_event(message: dict):
+        params = message.get("params") or {}
+        for argument in params.get("args") or []:
+            value = argument.get("value")
+            if isinstance(value, str) and value.startswith(
+                "[kiosk-agent-injection-error]"
+            ):
+                LOGGER.warning("%s", value)
+
     def _navigate_and_wait(
         self,
         socket: websocket.WebSocket,
@@ -409,6 +491,9 @@ class BrowserController:
                 try:
                     message = json.loads(socket.recv())
                 except websocket.WebSocketTimeoutException:
+                    continue
+                if message.get("method") == "Runtime.consoleAPICalled":
+                    self._log_injection_event(message)
                     continue
                 if message.get("method") == "Page.loadEventFired":
                     load_event = True

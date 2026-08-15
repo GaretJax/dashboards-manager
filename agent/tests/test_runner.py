@@ -40,7 +40,13 @@ def test_numeric_preloads_start_before_scheduled_display():
 
     assert pending == {"version-2"}
     browser.start_preload.assert_called_once_with(
-        "version-2", "https://far.example", 30, 25.0
+        "version-2",
+        "https://far.example",
+        30,
+        25.0,
+        None,
+        None,
+        None,
     )
 
     runner._schedule_preloads(  # pyright: ignore[reportPrivateUsage]
@@ -58,6 +64,9 @@ def test_numeric_preloads_start_before_scheduled_display():
         "https://next.example",
         30,
         5.0,
+        None,
+        None,
+        None,
     )
 
 
@@ -74,6 +83,9 @@ def test_navigation_always_preloads_with_numeric_delay():
         item.url,
         preload_delay_seconds=7,
         preload_timeout_seconds=30,
+        injected_css=None,
+        injected_javascript_before=None,
+        injected_javascript_after=None,
     )
 
 
