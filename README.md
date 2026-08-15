@@ -28,8 +28,12 @@ Display API and content:
 
 - `GET /api/screens/<public-token>/config`
 - `/screens/<public-token>/`
+- `POST /api/screens/<public-token>/status`
+- `POST /api/screens/<public-token>/events`
+- `POST /api/screens/<public-token>/screenshots`
 
-Content owns preloading configuration. `preload_delay_seconds` starts loading
+Local Compose starts RabbitMQ plus Celery worker/beat services for event
+retention. Content owns preloading configuration. `preload_delay_seconds` starts loading
 before display; `preload_timeout_seconds` displays content after timeout from
 request start, regardless of load state or delay. Content can use external URLs
 or one uploaded self-contained HTML file and can be reused across screens.

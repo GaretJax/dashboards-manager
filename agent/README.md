@@ -92,8 +92,9 @@ kiosk-agent service install \
 
 ## Commands
 
-- `run` launches/supervises Chromium and cycles playlist URLs. Use
-  `--log-level DEBUG|INFO|WARNING|ERROR|CRITICAL` or
+- `run` launches/supervises Chromium and cycles playlist content. Use
+  `--status-interval` and `--screenshot-interval` to tune operational reports
+  (defaults: 60 and 300 seconds). Use `--log-level DEBUG|INFO|WARNING|ERROR|CRITICAL` or
   `KIOSK_AGENT_LOG_LEVEL` to control verbosity. The selected level is stored
   in generated systemd units. HTTPX request lines are DEBUG-level.
 - `config` prints current playlist, preload, and power configuration.
@@ -124,9 +125,14 @@ DISPLAY=:0 kiosk-agent doctor
 
 Agent always preloads pages in background targets. `preload_delay_seconds`
 starts loading before scheduled display. `preload_timeout_seconds` counts from
-request start and displays target page when it expires, regardless of load
-state or remaining preload delay. Both values can be set per screen and
-overridden per page.
+request start and displays target content when it expires, regardless of load
+state or remaining preload delay. Both values belong to reusable content.
+Content may define CSS plus JavaScript before-page-scripts and after-load
+injections. Injection failures are logged without stopping playback. Native
+JavaScript dialogs are automatically handled so they cannot block the kiosk.
+The agent periodically reports host/display/browser health and uploads one
+latest in-memory diagnostic screenshot per content item at the configured
+interval; screenshots are not written locally.
 
 ## HDMI-CEC power schedules
 
@@ -164,6 +170,8 @@ TOML config files live in platformdirs config directory, normally
 manager = "https://manager.example"
 screen = "SCREEN_TOKEN"
 cec_port = "/dev/cec0"
+status_interval = 60
+screenshot_interval = 300
 wayland_display = "wayland-0"
 runtime_dir = "/run/user/1000"
 ```
