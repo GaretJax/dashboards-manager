@@ -27,6 +27,27 @@ class FakeResponse:
         return self.payload
 
 
+class RedirectClient:
+    def __init__(self, location):
+        self.location = location
+
+    def head(self, url, follow_redirects):
+        assert url.endswith("/downloads/kiosk-agent.whl")
+        assert follow_redirects is False
+        return type(
+            "Response",
+            (),
+            {
+                "status_code": 302,
+                "headers": {"location": self.location},
+                "raise_for_status": lambda self: None,
+            },
+        )()
+
+    def close(self):
+        pass
+
+
 class FakeClient:
     def __init__(self, response):
         self.response = response
@@ -118,6 +139,21 @@ def test_manager_client_fetches_and_orders_playlist(fake_client, caplog):
     }
     client.close()
     assert fake_client.closed is True
+
+
+def test_manager_client_checks_wheel_redirect(monkeypatch):
+    fake = RedirectClient("/downloads/kiosk_agent-0.1.2-py3-none-any.whl")
+    monkeypatch.setattr(api.httpx, "Client", lambda timeout: fake)
+    client = ManagerClient("https://manager.example", "token")
+
+    update = client.check_agent_update()
+
+    assert update.filename == "kiosk_agent-0.1.2-py3-none-any.whl"
+    assert update.version == "0.1.2"
+    assert update.url == (
+        "https://manager.example/downloads/kiosk_agent-0.1.2-py3-none-any.whl"
+    )
+    client.close()
 
 
 def test_manager_client_defaults_preload_values(monkeypatch):

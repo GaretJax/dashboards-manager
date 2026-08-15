@@ -44,16 +44,17 @@ class AgentEventReporter:
         with self._lock:
             self._queue.append(event)
 
-    def flush(self):
+    def flush(self) -> bool:
         with self._lock:
             batch = list(self._queue)[:50]
         if not batch:
-            return
+            return True
         try:
             self.manager.report_events(batch)
         except ManagerError:
-            return
+            return False
         with self._lock:
             for _event in batch:
                 if self._queue:
                     self._queue.popleft()
+        return True

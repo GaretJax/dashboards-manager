@@ -90,6 +90,8 @@ def merge_config(
         "poll_interval": 15.0,
         "status_interval": 60.0,
         "screenshot_interval": 300.0,
+        "update_interval": 21600.0,
+        "auto_update": True,
         "log_level": "INFO",
         "cec_port": None,
         "display": None,
@@ -105,7 +107,7 @@ def merge_config(
         raise ConfigError("manager and screen are required")
     if not isinstance(values.get("screen"), str) or not values["screen"]:
         raise ConfigError("manager and screen are required")
-    for key in ("ephemeral_profile", "launch_browser"):
+    for key in ("ephemeral_profile", "launch_browser", "auto_update"):
         if not isinstance(values[key], bool):
             raise ConfigError(f"{key} must be boolean")
     try:
@@ -115,7 +117,11 @@ def merge_config(
     if poll_interval < 1:
         raise ConfigError("poll_interval must be at least 1 second")
     values["poll_interval"] = poll_interval
-    for key in ("status_interval", "screenshot_interval"):
+    for key in (
+        "status_interval",
+        "screenshot_interval",
+        "update_interval",
+    ):
         try:
             interval = float(values[key])
         except (TypeError, ValueError, OverflowError) as exc:

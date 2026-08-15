@@ -4,6 +4,7 @@ import pytest
 
 from kiosk_agent.api import PendingCommand, PlaylistItem, ScreenConfig
 from kiosk_agent.runner import AgentRestartRequested, AgentRunner
+from kiosk_agent.update import AgentUpdate
 
 
 def _item(url, duration, preload_delay=0):
@@ -13,6 +14,34 @@ def _item(url, duration, preload_delay=0):
         order=0,
         preload_delay_seconds=preload_delay,
         preload_timeout_seconds=30,
+    )
+
+
+def test_new_agent_update_installs_and_requests_service_restart(monkeypatch):
+    manager = Mock()
+    manager.check_agent_update.return_value = AgentUpdate(
+        "kiosk_agent-0.1.2-py3-none-any.whl",
+        "https://manager.example/downloads/kiosk_agent-0.1.2-py3-none-any.whl",
+        "0.1.2",
+    )
+    manager.download_agent_wheel.return_value = b"wheel"
+    runner = AgentRunner(manager, Mock(), config_name="kiosk")
+    monkeypatch.setattr("kiosk_agent.runner.verify_wheel", Mock())
+    monkeypatch.setattr("kiosk_agent.runner.install_wheel", Mock())
+    monkeypatch.setattr("kiosk_agent.runner.refresh_service", Mock())
+    restart = Mock()
+    monkeypatch.setattr("kiosk_agent.runner.run_systemctl", restart)
+
+    with pytest.raises(AgentRestartRequested):
+        runner._maybe_update()  # pyright: ignore[reportPrivateUsage]
+
+    manager.check_agent_update.assert_called_once_with()
+    manager.download_agent_wheel.assert_called_once()
+    restart.assert_called_once()
+    assert any(
+        event["code"] == "update_installed"
+        for batch in manager.report_events.call_args_list
+        for event in batch.args[0]
     )
 
 

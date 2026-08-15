@@ -41,6 +41,7 @@ from .service import (
     stable_install_error,
     uninstall_unit,
 )
+from .update import UpdateError, compare_versions
 from .wayland import (
     WaylandSetupError,
     default_labwc_config_path,
@@ -115,6 +116,8 @@ def main():
     default=None,
 )
 @click.option("--display-identity", default=None)
+@click.option("--update-interval", type=click.FloatRange(min=1), default=None)
+@click.option("--auto-update/--no-auto-update", default=None)
 @click.option(
     "--log-level",
     type=click.Choice(LOG_LEVELS, case_sensitive=False),
@@ -135,6 +138,8 @@ def run(
     status_interval,
     screenshot_interval,
     display_identity,
+    update_interval,
+    auto_update,
     log_level,
 ):
     """Launch Chromium and run screen playlist."""
@@ -154,6 +159,8 @@ def run(
                 "status_interval": status_interval,
                 "screenshot_interval": screenshot_interval,
                 "display_identity": display_identity,
+                "update_interval": update_interval,
+                "auto_update": auto_update,
                 "log_level": log_level,
             },
         )
@@ -171,6 +178,8 @@ def run(
     status_interval = values["status_interval"]
     screenshot_interval = values["screenshot_interval"]
     display_identity = values["display_identity"]
+    update_interval = values["update_interval"]
+    auto_update = values["auto_update"]
     log_level = values["log_level"]
     if profile_dir:
         profile_dir = Path(profile_dir)
@@ -216,6 +225,9 @@ def run(
             status_interval,
             screenshot_interval,
             display_identity,
+            update_interval=update_interval,
+            auto_update=auto_update,
+            config_name=config_ref,
         )
         runner.run()
     except AgentRestartRequested:
@@ -479,6 +491,45 @@ def bootstrap(
     click.echo(f"Installed {unit_file}")
 
 
+@main.command(name="update")
+@click.option("--config", "config_ref", help="TOML config name or path.")
+@click.option("--manager", help="Kiosk Manager base URL.")
+@click.option("--screen", "screen_token", help="Screen token.")
+@click.option("--check", is_flag=True, help="Check without installing.")
+def update_command(config_ref, manager, screen_token, check):
+    """Check remote agent wheel version."""
+    if config_ref:
+        try:
+            values = merge_config(
+                config_ref,
+                {"manager": manager, "screen": screen_token},
+            )
+        except ConfigError as exc:
+            raise click.ClickException(str(exc)) from exc
+        manager = values["manager"]
+        screen_token = values["screen"]
+    elif not manager or not screen_token:
+        raise click.UsageError(
+            "--manager and --screen are required without --config"
+        )
+    client = ManagerClient(manager, screen_token)
+    try:
+        remote = client.check_agent_update()
+    except ManagerError as exc:
+        raise click.ClickException(str(exc)) from exc
+    finally:
+        client.close()
+    try:
+        comparison = compare_versions(__version__, remote.version)
+    except UpdateError as exc:
+        raise click.ClickException(str(exc)) from exc
+    state = "available" if comparison < 0 else "current"
+    click.echo(f"current={__version__} remote={remote.version} state={state}")
+    click.echo(remote.url)
+    if check and comparison < 0:
+        return
+
+
 @main.command()
 @click.option("--config", "config_ref", help="TOML config name or path.")
 @click.option("--manager", help="Kiosk Manager base URL.")
@@ -672,6 +723,8 @@ def service():
     "--screenshot-interval", type=click.FloatRange(min=1), default=None
 )
 @click.option("--display-identity", default=None)
+@click.option("--update-interval", type=click.FloatRange(min=1), default=None)
+@click.option("--auto-update/--no-auto-update", default=None)
 @click.option(
     "--log-level",
     type=click.Choice(LOG_LEVELS, case_sensitive=False),
@@ -701,6 +754,8 @@ def service_install(
     status_interval,
     screenshot_interval,
     display_identity,
+    update_interval,
+    auto_update,
     log_level,
     scope,
     service_user,
@@ -729,6 +784,8 @@ def service_install(
                 "status_interval": status_interval,
                 "screenshot_interval": screenshot_interval,
                 "display_identity": display_identity,
+                "update_interval": update_interval,
+                "auto_update": auto_update,
                 "log_level": log_level,
                 "display": display,
                 "wayland_display": wayland_display,

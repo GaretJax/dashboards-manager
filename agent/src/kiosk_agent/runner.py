@@ -1,11 +1,23 @@
+import contextlib
 import logging
+import tempfile
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 
+from . import __version__
 from .api import ManagerClient, ManagerError, PlaylistItem, ScreenConfig
 from .browser import BrowserController, BrowserError
 from .cec import CecController, CecError
+from .service import run_systemctl, service_instance_name
 from .telemetry import AgentTelemetry, RuntimeState
+from .update import (
+    UpdateError,
+    compare_versions,
+    install_wheel,
+    refresh_service,
+    verify_wheel,
+)
 
 LOGGER = logging.getLogger("kiosk_agent")
 
@@ -24,6 +36,9 @@ class AgentRunner:
         status_interval: float = 60,
         screenshot_interval: float = 300,
         display_identity: str | None = None,
+        update_interval: float = 21600,
+        auto_update: bool = True,
+        config_name: str | None = None,
     ):
         self.manager = manager
         self.browser = browser
@@ -31,6 +46,11 @@ class AgentRunner:
         self.cec = cec
         self.status_interval = status_interval
         self.screenshot_interval = screenshot_interval
+        self.update_interval = update_interval
+        self.auto_update = auto_update
+        self.config_name = Path(config_name).stem if config_name else None
+        self._next_update_check = 0.0
+        self._failed_update_version: str | None = None
         self._power_state: str | None = None
         self._last_reported_power_state: str | None = None
         self.runtime_state = RuntimeState()
@@ -58,6 +78,7 @@ class AgentRunner:
                 desired_power_state=config.desired_power_state or "",
             )
             self.browser.start()
+            self._maybe_update()
             self._run_playlist(config)
         finally:
             self.telemetry.stop()
@@ -71,6 +92,7 @@ class AgentRunner:
         pending: set[str] = set()
 
         while True:
+            self._maybe_update()
             self._sync_power(config)
             if not config.items:
                 self.runtime_state.update(
@@ -107,6 +129,7 @@ class AgentRunner:
 
             while time.monotonic() < deadline:
                 now = time.monotonic()
+                self._maybe_update()
                 self._sync_power(config)
                 self.browser.handle_pending_dialogs()
                 self._maybe_capture_screenshot(item)
@@ -142,6 +165,111 @@ class AgentRunner:
     @staticmethod
     def _preload_key(config: ScreenConfig, position: int) -> str:
         return f"{config.version[:12]}-{position}"
+
+    def _maybe_update(self):
+        if not self.auto_update or self.config_name is None:
+            return
+        now = time.monotonic()
+        if now < self._next_update_check:
+            return
+        self._next_update_check = now + self.update_interval
+        self.telemetry.emit(
+            "update_check_started",
+            "DEBUG",
+            "Checking for agent update",
+        )
+        try:
+            update = self.manager.check_agent_update()
+            comparison = compare_versions(__version__, update.version)
+        except (ManagerError, UpdateError) as exc:
+            self.telemetry.emit(
+                "update_failed",
+                "WARNING",
+                "Agent update check failed",
+                fingerprint="update_failed:check",
+                details={"stage": "check", "error": str(exc)[:200]},
+            )
+            LOGGER.warning("agent update check failed: %s", exc)
+            return
+        if comparison <= 0 or update.version == self._failed_update_version:
+            return
+
+        self.telemetry.emit(
+            "update_available",
+            "INFO",
+            f"Agent update available: {__version__} -> {update.version}",
+            details={
+                "current_version": __version__,
+                "remote_version": update.version,
+                "wheel_filename": update.filename,
+            },
+        )
+        wheel_path = None
+        try:
+            self.telemetry.emit(
+                "update_download_started",
+                "INFO",
+                f"Downloading agent {update.version}",
+                details={"remote_version": update.version},
+            )
+            wheel_bytes = self.manager.download_agent_wheel(update)
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                prefix="kiosk-agent-update-",
+                suffix=".whl",
+                delete=False,
+            ) as handle:
+                handle.write(wheel_bytes)
+                wheel_path = Path(handle.name)
+            verify_wheel(wheel_path, update)
+            self.telemetry.emit(
+                "update_install_started",
+                "INFO",
+                f"Installing agent {update.version}",
+                details={"remote_version": update.version},
+            )
+            install_wheel(wheel_path, update)
+            if self.config_name is not None:
+                refresh_service(self.config_name)
+            self.telemetry.emit(
+                "update_installed",
+                "INFO",
+                f"Agent {update.version} installed",
+                details={
+                    "current_version": __version__,
+                    "remote_version": update.version,
+                    "wheel_filename": update.filename,
+                },
+            )
+            if not self.telemetry.events.flush():
+                LOGGER.warning("could not flush agent update events")
+            self.telemetry.emit(
+                "update_restart_requested",
+                "INFO",
+                f"Restarting agent on version {update.version}",
+                details={"remote_version": update.version},
+            )
+            self.telemetry.events.flush()
+            run_systemctl(
+                "user",
+                "restart",
+                service_instance_name(self.config_name),
+            )
+            raise AgentRestartRequested
+        except (ManagerError, OSError, UpdateError) as exc:
+            self._failed_update_version = update.version
+            self.telemetry.emit(
+                "update_failed",
+                "ERROR",
+                f"Agent update {update.version} failed",
+                fingerprint=f"update_failed:{update.version}",
+                details={"stage": "install", "error": str(exc)[:200]},
+            )
+            LOGGER.warning("agent update failed: %s", exc)
+        finally:
+            if wheel_path is not None:
+                with contextlib.suppress(OSError):
+                    wheel_path.unlink()
 
     def _sync_power(self, config: ScreenConfig):
         desired_state = config.desired_power_state

@@ -7,6 +7,12 @@ import httpx
 from attrs import define
 
 from .cec import PowerSchedule
+from .update import (
+    MAX_WHEEL_SIZE,
+    AgentUpdate,
+    UpdateError,
+    parse_wheel_location,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -154,6 +160,10 @@ class ManagerClient:
     def screenshots_url(self) -> str:
         token = quote(self.screen_token, safe="")
         return f"{self.manager_url}/api/screens/{token}/screenshots"
+
+    @property
+    def agent_wheel_url(self) -> str:
+        return f"{self.manager_url}/downloads/kiosk-agent.whl"
 
     @property
     def events_url(self) -> str:
@@ -316,3 +326,60 @@ class ManagerClient:
             raise ManagerError(
                 f"manager events request failed: {exc}"
             ) from exc
+
+    def check_agent_update(self) -> AgentUpdate:
+        try:
+            with self._lock:
+                response = self._client.head(
+                    self.agent_wheel_url,
+                    follow_redirects=False,
+                )
+                if not 300 <= response.status_code < 400:
+                    response.raise_for_status()
+                    raise ManagerError("manager did not redirect agent wheel")
+                location = response.headers.get("location")
+        except httpx.HTTPStatusError as exc:
+            raise ManagerError(
+                f"manager returned HTTP {exc.response.status_code}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ManagerError(f"manager update check failed: {exc}") from exc
+        if not location:
+            raise ManagerError("manager returned no agent wheel location")
+        try:
+            return parse_wheel_location(self.agent_wheel_url, location)
+        except UpdateError as exc:
+            raise ManagerError(str(exc)) from exc
+
+    def download_agent_wheel(self, update: AgentUpdate) -> bytes:
+        try:
+            with (
+                self._lock,
+                self._client.stream(
+                    "GET",
+                    update.url,
+                    follow_redirects=False,
+                ) as response,
+            ):
+                response.raise_for_status()
+                length = response.headers.get("content-length")
+                if length is not None and int(length) > MAX_WHEEL_SIZE:
+                    raise ManagerError("agent wheel exceeds maximum size")
+                chunks = []
+                total = 0
+                for chunk in response.iter_bytes():
+                    total += len(chunk)
+                    if total > MAX_WHEEL_SIZE:
+                        raise ManagerError("agent wheel exceeds maximum size")
+                    chunks.append(chunk)
+        except ValueError as exc:
+            raise ManagerError("manager returned invalid wheel size") from exc
+        except httpx.HTTPStatusError as exc:
+            raise ManagerError(
+                f"manager returned HTTP {exc.response.status_code}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ManagerError(
+                f"manager wheel download failed: {exc}"
+            ) from exc
+        return b"".join(chunks)
