@@ -62,11 +62,13 @@ class AgentTelemetry:
         state: RuntimeState,
         browser: BrowserController,
         status_interval: float = 60,
+        display_identity: str | None = None,
     ):
         self.manager = manager
         self.state = state
         self.browser = browser
         self.status_interval = status_interval
+        self.display_identity = display_identity
         self.events = AgentEventReporter(manager)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -131,7 +133,9 @@ class AgentTelemetry:
         else:
             self.state.update(browser_version=browser_version)
 
-        display = probe_display()
+        display = probe_display(
+            preferred_identity=self.display_identity or "HDMI-A-1"
+        )
         self.state.update(
             display_identity=display.identity or "",
             display_width=display.width,

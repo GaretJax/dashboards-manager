@@ -1,7 +1,9 @@
 import json
 import logging
 import os
+import shutil
 import tempfile
+import time
 from pathlib import Path
 
 import click
@@ -15,9 +17,18 @@ from .cec import (
     detect_cec_ports,
     list_cec_ports,
 )
-from .config import ConfigError, dump_config, merge_config
+from .config import (
+    ConfigError,
+    config_path,
+    dump_config,
+    merge_config,
+)
 from .diagnostics import run_checks, service_unit_check
-from .display import detect_display_backend
+from .display import (
+    detect_display_backend,
+    display_identities,
+    runtime_directory,
+)
 from .paths import ensure_profile_dir
 from .runner import AgentRestartRequested, AgentRunner
 from .service import (
@@ -103,6 +114,7 @@ def main():
     type=click.FloatRange(min=1),
     default=None,
 )
+@click.option("--display-identity", default=None)
 @click.option(
     "--log-level",
     type=click.Choice(LOG_LEVELS, case_sensitive=False),
@@ -122,6 +134,7 @@ def run(
     poll_interval,
     status_interval,
     screenshot_interval,
+    display_identity,
     log_level,
 ):
     """Launch Chromium and run screen playlist."""
@@ -140,6 +153,7 @@ def run(
                 "poll_interval": poll_interval,
                 "status_interval": status_interval,
                 "screenshot_interval": screenshot_interval,
+                "display_identity": display_identity,
                 "log_level": log_level,
             },
         )
@@ -156,6 +170,7 @@ def run(
     poll_interval = values["poll_interval"]
     status_interval = values["status_interval"]
     screenshot_interval = values["screenshot_interval"]
+    display_identity = values["display_identity"]
     log_level = values["log_level"]
     if profile_dir:
         profile_dir = Path(profile_dir)
@@ -200,6 +215,7 @@ def run(
             CecController(cec_port) if cec_port else None,
             status_interval,
             screenshot_interval,
+            display_identity,
         )
         runner.run()
     except AgentRestartRequested:
@@ -209,6 +225,258 @@ def run(
     finally:
         if temporary_profile is not None:
             temporary_profile.cleanup()
+
+
+def _bootstrap_choice(label, values, default, non_interactive):
+    values = list(values)
+    if not values:
+        raise click.ClickException(f"no choices available for {label}")
+    if len(values) == 1:
+        return values[0]
+    if default in values and non_interactive:
+        return default
+    if non_interactive:
+        raise click.ClickException(
+            f"multiple choices for {label}; pass an explicit value"
+        )
+    return click.prompt(
+        label,
+        type=click.Choice(values, case_sensitive=True),
+        default=default if default in values else None,
+    )
+
+
+def _bootstrap_display(
+    *,
+    display,
+    wayland_display,
+    runtime_dir,
+    display_identity,
+    non_interactive,
+):
+    environment = current_display_environment()
+    backends = []
+    if wayland_display or environment["wayland_display"]:
+        backends.append("wayland")
+    if display or environment["display"]:
+        backends.append("x11")
+    if len(backends) > 1 and non_interactive:
+        raise click.ClickException(
+            "multiple display backends detected; pass an explicit display"
+        )
+    backend = _bootstrap_choice(
+        "display backend",
+        backends or ["wayland"],
+        "wayland"
+        if "wayland" in backends
+        else backends[0]
+        if backends
+        else "wayland",
+        non_interactive,
+    )
+    if backend == "wayland":
+        selected_wayland = wayland_display or environment["wayland_display"]
+        selected_wayland = selected_wayland or "wayland-0"
+        selected_runtime = (
+            runtime_dir
+            or environment["runtime_dir"]
+            or runtime_directory({"WAYLAND_DISPLAY": selected_wayland})
+        )
+        selected_display = None
+    else:
+        selected_display = display or environment["display"]
+        if not selected_display:
+            if non_interactive:
+                raise click.ClickException("DISPLAY is required for X11")
+            selected_display = click.prompt("X11 DISPLAY", default=":0")
+        selected_wayland = None
+        selected_runtime = runtime_dir or environment["runtime_dir"]
+
+    selected_environment = {
+        "DISPLAY": selected_display or "",
+        "WAYLAND_DISPLAY": selected_wayland or "",
+        "XDG_RUNTIME_DIR": selected_runtime or "",
+    }
+    os.environ.update(selected_environment)
+    identities = list(display_identities(selected_environment))
+    if display_identity:
+        if identities and display_identity not in identities:
+            raise click.ClickException(
+                f"display identity not detected: {display_identity}"
+            )
+        selected_identity = display_identity
+    elif len(identities) > 1:
+        selected_identity = _bootstrap_choice(
+            "display output",
+            identities,
+            (
+                "HDMI-A-1"
+                if "HDMI-A-1" in identities and not non_interactive
+                else None
+            ),
+            non_interactive,
+        )
+    else:
+        selected_identity = identities[0] if identities else "HDMI-A-1"
+    return {
+        "display": selected_display,
+        "wayland_display": selected_wayland,
+        "runtime_dir": selected_runtime,
+        "display_identity": selected_identity,
+        "backend": backend,
+    }
+
+
+def _bootstrap_browser(browser, non_interactive):
+    if browser:
+        if not shutil.which(browser):
+            raise click.ClickException(
+                f"browser executable not found: {browser}"
+            )
+        return browser
+    candidates = [
+        candidate
+        for candidate in ("chromium", "chromium-browser", "google-chrome")
+        if shutil.which(candidate)
+    ]
+    if not candidates:
+        raise click.ClickException("Chromium executable not found")
+    return _bootstrap_choice(
+        "browser executable",
+        candidates,
+        "chromium" if "chromium" in candidates else candidates[0],
+        non_interactive,
+    )
+
+
+def _bootstrap_cec(cec_port, non_interactive):
+    if cec_port:
+        return cec_port
+    candidates = detect_cec_ports()
+    if len(candidates) <= 1:
+        return candidates[0] if candidates else None
+    choices = ["none", *candidates]
+    selected = _bootstrap_choice(
+        "HDMI-CEC port", choices, None, non_interactive
+    )
+    return None if selected == "none" else selected
+
+
+@main.command()
+@click.option("--manager", required=True, help="Kiosk Manager base URL.")
+@click.option("--screen", "screen_token", required=True, help="Screen token.")
+@click.option("--config", "config_name", default="kiosk", show_default=True)
+@click.option("--browser", default=None, help="Chromium executable name/path.")
+@click.option("--cec-port", default=None, help="HDMI-CEC device path.")
+@click.option("--display")
+@click.option("--wayland-display")
+@click.option("--runtime-dir")
+@click.option("--display-identity")
+@click.option("--poll-interval", type=click.FloatRange(min=1), default=None)
+@click.option("--status-interval", type=click.FloatRange(min=1), default=None)
+@click.option(
+    "--screenshot-interval", type=click.FloatRange(min=1), default=None
+)
+@click.option("--non-interactive", is_flag=True)
+@click.option("--force", is_flag=True, help="Replace existing config.")
+def bootstrap(
+    manager,
+    screen_token,
+    config_name,
+    browser,
+    cec_port,
+    display,
+    wayland_display,
+    runtime_dir,
+    display_identity,
+    poll_interval,
+    status_interval,
+    screenshot_interval,
+    non_interactive,
+    force,
+):
+    """Configure, install, start, and validate a kiosk agent service."""
+    try:
+        config_file = config_path(config_name)
+    except ConfigError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if (
+        config_file.exists()
+        and not force
+        and (
+            non_interactive
+            or not click.confirm(
+                f"Replace existing config {config_file}?", default=False
+            )
+        )
+    ):
+        raise click.ClickException("existing config was not replaced")
+
+    display_values = _bootstrap_display(
+        display=display,
+        wayland_display=wayland_display,
+        runtime_dir=runtime_dir,
+        display_identity=display_identity,
+        non_interactive=non_interactive,
+    )
+    selected_browser = _bootstrap_browser(browser, non_interactive)
+    selected_cec = _bootstrap_cec(cec_port, non_interactive)
+    if (
+        display_values["backend"] == "wayland"
+        and not non_interactive
+        and click.confirm("Install labwc cursor binding?", default=True)
+    ):
+        try:
+            install_labwc_keybindings()
+        except WaylandSetupError as exc:
+            click.echo(f"Warning: could not update labwc config: {exc}")
+
+    overrides = {
+        "manager": manager.rstrip("/"),
+        "screen": screen_token,
+        "browser": selected_browser,
+        "cec_port": selected_cec,
+        "display": display_values["display"],
+        "display_identity": display_values["display_identity"],
+        "wayland_display": display_values["wayland_display"],
+        "runtime_dir": display_values["runtime_dir"],
+        "poll_interval": poll_interval,
+        "status_interval": status_interval,
+        "screenshot_interval": screenshot_interval,
+    }
+    try:
+        values = merge_config(config_name, overrides, allow_missing=True)
+        config_file = dump_config(config_name, values)
+        unit = render_unit(
+            scope="user",
+            display=values["display"],
+            wayland_display=values["wayland_display"],
+            runtime_dir=values["runtime_dir"],
+        )
+        unit_file = install_unit(unit, "user", True, True, config_name)
+    except (ConfigError, OSError, RuntimeError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    results = []
+    for attempt in range(12):
+        results = run_checks(
+            manager_url=values["manager"],
+            screen_token=values["screen"],
+            browser=values["browser"],
+            cec_port=values["cec_port"],
+            require_persistent=True,
+        )
+        if not any(result.level == "fail" for result in results):
+            break
+        if attempt < 11:
+            time.sleep(2)
+    _print_checks(results)
+    if any(result.level == "fail" for result in results):
+        raise click.ClickException(
+            "bootstrap validation failed; inspect the user service logs"
+        )
+    click.echo(f"Wrote {config_file}")
+    click.echo(f"Installed {unit_file}")
 
 
 @main.command()
@@ -399,6 +667,11 @@ def service():
 @click.option("--ephemeral-profile/--no-ephemeral-profile", default=None)
 @click.option("--launch-browser/--no-launch-browser", default=None)
 @click.option("--poll-interval", type=click.FloatRange(min=1), default=None)
+@click.option("--status-interval", type=click.FloatRange(min=1), default=None)
+@click.option(
+    "--screenshot-interval", type=click.FloatRange(min=1), default=None
+)
+@click.option("--display-identity", default=None)
 @click.option(
     "--log-level",
     type=click.Choice(LOG_LEVELS, case_sensitive=False),
@@ -425,6 +698,9 @@ def service_install(
     ephemeral_profile,
     launch_browser,
     poll_interval,
+    status_interval,
+    screenshot_interval,
+    display_identity,
     log_level,
     scope,
     service_user,
@@ -450,6 +726,9 @@ def service_install(
                 "ephemeral_profile": ephemeral_profile,
                 "launch_browser": launch_browser,
                 "poll_interval": poll_interval,
+                "status_interval": status_interval,
+                "screenshot_interval": screenshot_interval,
+                "display_identity": display_identity,
                 "log_level": log_level,
                 "display": display,
                 "wayland_display": wayland_display,

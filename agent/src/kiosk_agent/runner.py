@@ -23,6 +23,7 @@ class AgentRunner:
         cec: CecController | None = None,
         status_interval: float = 60,
         screenshot_interval: float = 300,
+        display_identity: str | None = None,
     ):
         self.manager = manager
         self.browser = browser
@@ -38,6 +39,7 @@ class AgentRunner:
             self.runtime_state,
             browser,
             status_interval=status_interval,
+            display_identity=display_identity,
         )
         self._last_screenshot_at: dict[int, float] = {}
 

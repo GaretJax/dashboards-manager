@@ -50,6 +50,38 @@ def display_environment_ready(
     return backend == "x11"
 
 
+def display_identities(
+    environment: Mapping[str, str] | None = None,
+) -> tuple[str, ...]:
+    values = os.environ if environment is None else environment
+    backend = detect_display_backend(values)
+    if backend is None:
+        return ()
+    command = "wlr-randr" if backend == "wayland" else "xrandr"
+    executable = shutil.which(command)
+    if executable is None:
+        return ()
+    try:
+        result = subprocess.run(  # noqa: S603
+            [executable, "--current"] if backend == "x11" else [executable],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=3,
+            env=dict(values),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ()
+    if result.returncode != 0:
+        return ()
+    identities = []
+    for line in result.stdout.splitlines():
+        match = re.match(r"^(\S+)\s+(?:connected|enabled)\b", line)
+        if match and match.group(1) not in identities:
+            identities.append(match.group(1))
+    return tuple(identities)
+
+
 def display_environment_detail(
     environment: Mapping[str, str] | None = None,
 ) -> str:

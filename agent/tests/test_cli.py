@@ -6,6 +6,7 @@ from click.testing import CliRunner
 from kiosk_agent import cli
 from kiosk_agent import config as config_module
 from kiosk_agent.cli import main
+from kiosk_agent.diagnostics import CheckResult
 from kiosk_agent.paths import AgentPaths
 
 
@@ -101,6 +102,91 @@ def test_service_install_writes_named_config_and_template(
     assert (tmp_path / "config/left.toml").exists()
     install.assert_called_once()
     assert install.call_args.args[-1] == "left"
+
+
+def test_bootstrap_non_interactive_writes_config_and_service(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(
+        config_module,
+        "get_paths",
+        lambda: AgentPaths(
+            tmp_path / "data",
+            tmp_path / "config",
+            tmp_path / "cache",
+            tmp_path / "runtime",
+            tmp_path / "profile",
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "_bootstrap_display",
+        lambda **_kwargs: {
+            "display": None,
+            "wayland_display": "wayland-0",
+            "runtime_dir": "/run/user/1000",
+            "display_identity": "HDMI-A-1",
+            "backend": "wayland",
+        },
+    )
+    monkeypatch.setattr(cli, "_bootstrap_browser", lambda *_args: "chromium")
+    monkeypatch.setattr(cli, "_bootstrap_cec", lambda *_args: None)
+    monkeypatch.setattr(cli, "install_unit", Mock())
+    monkeypatch.setattr(
+        cli,
+        "run_checks",
+        lambda **_kwargs: [CheckResult("bootstrap", "ok", "ready")],
+    )
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "bootstrap",
+            "--manager",
+            "https://manager.example",
+            "--screen",
+            "TOKEN",
+            "--non-interactive",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    config = (tmp_path / "config/kiosk.toml").read_text()
+    assert 'manager = "https://manager.example"' in config
+    assert 'screen = "TOKEN"' in config
+    assert 'wayland_display = "wayland-0"' in config
+
+
+def test_bootstrap_non_interactive_rejects_ambiguous_displays(monkeypatch):
+    monkeypatch.setattr(
+        cli,
+        "current_display_environment",
+        lambda: {
+            "display": None,
+            "wayland_display": "wayland-0",
+            "runtime_dir": "/run/user/1000",
+        },
+    )
+    monkeypatch.setattr(
+        cli,
+        "display_identities",
+        lambda _environment: ("HDMI-A-1", "DP-1"),
+    )
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "bootstrap",
+            "--manager",
+            "https://manager.example",
+            "--screen",
+            "TOKEN",
+            "--non-interactive",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "multiple choices for display output" in result.output
 
 
 def test_wayland_setup_dry_run_prints_cursor_binding():

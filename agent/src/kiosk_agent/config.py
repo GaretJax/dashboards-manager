@@ -93,6 +93,7 @@ def merge_config(
         "log_level": "INFO",
         "cec_port": None,
         "display": None,
+        "display_identity": None,
         "wayland_display": None,
         "runtime_dir": None,
         **values,
@@ -122,6 +123,10 @@ def merge_config(
         if interval < 1:
             raise ConfigError(f"{key} must be at least 1 second")
         values[key] = interval
+    if values["display_identity"] is not None and not isinstance(
+        values["display_identity"], str
+    ):
+        raise ConfigError("display_identity must be a string")
     if not isinstance(values["log_level"], str):
         raise ConfigError("log_level must be a string")
     values["log_level"] = values["log_level"].upper()

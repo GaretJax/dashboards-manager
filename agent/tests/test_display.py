@@ -5,6 +5,7 @@ from kiosk_agent.display import (
     detect_display_backend,
     display_environment_detail,
     display_environment_ready,
+    display_identities,
     probe_display,
     runtime_directory,
 )
@@ -81,6 +82,9 @@ def test_probes_wayland_output(monkeypatch):
     assert info.height == 1440
     assert info.refresh_rate == 59.95
     assert info.orientation == "normal"
+    assert display_identities({"WAYLAND_DISPLAY": "wayland-0"}) == (
+        "HDMI-A-1",
+    )
 
 
 def test_wayland_takes_precedence_over_x11():
