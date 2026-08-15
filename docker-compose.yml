@@ -7,6 +7,7 @@ x-app: &app
   volumes:
     - .:/app:rw
     - ./.artifacts/staticfiles:/app/staticfiles:rw
+    - ./.artifacts/media:/app/media:rw
     - virtualenv:/app/.venv
     - uv-cache:/root/.cache/uv
   depends_on:

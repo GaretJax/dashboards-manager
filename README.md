@@ -18,7 +18,8 @@ docker compose up --build
 ```
 
 Open <https://dashboards.local.aldryn.net/admin/> to create a superuser and
-configure screens. External access is HTTPS-only; TLS terminates at external
+configure screens. Uploaded media persists under `.artifacts/media` in local
+Docker Compose. External access is HTTPS-only; TLS terminates at external
 LB. A screen detail page exposes its public display URL. The
 token can be rotated with the **Rotate public token** detail action; existing
 URLs stop working immediately.
