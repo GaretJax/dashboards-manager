@@ -88,4 +88,10 @@ kiosk-agent service install --manager https://manager.example --screen TOKEN
 ```
 
 For Chromium background preloading and host setup, see
-[`agent/README.md`](agent/README.md#background-preloading).
+[`agent/README.md`](agent/README.md#background-preloading). For a screen
+created in admin, copy its **Agent installation** command and run it on a
+Debian-family kiosk host:
+
+```shell
+curl -fsSL 'https://manager.example/install.sh?screen=SCREEN_TOKEN' | bash
+```

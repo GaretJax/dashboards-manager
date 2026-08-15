@@ -80,8 +80,19 @@ uvx --from ./agent kiosk-agent run \
   --screen SCREEN_TOKEN
 ```
 
-`uvx` is suitable for one-off runs. Service installation requires a persistent
-installation because uvx environments live in cache:
+`uvx` is suitable for one-off runs. For an administrator-
+created screen, Manager serves a one-command Debian bootstrap:
+
+```shell
+curl -fsSL 'https://manager.example/install.sh?screen=SCREEN_TOKEN' | bash
+```
+
+Shell installs host dependencies and the wheel; `kiosk-agent bootstrap` handles
+interactive display/CEC selection, config generation, systemd setup, and doctor
+validation.
+
+Service installation requires a persistent installation because uvx environments
+live in cache:
 
 ```shell
 uv tool install kiosk-agent
@@ -98,6 +109,10 @@ kiosk-agent service install \
   `KIOSK_AGENT_LOG_LEVEL` to control verbosity. The selected level is stored
   in generated systemd units. HTTPX request lines are DEBUG-level.
 - `config` prints current playlist, preload, and power configuration.
+- `bootstrap` interactively configures display/CEC, writes config, installs the
+  user service, and validates startup. Use `--non-interactive` only with
+  unambiguous host defaults.
+- `update --check` checks stable Manager wheel redirect for a newer agent.
 - `cec list` and `cec detect` inspect HDMI-CEC adapters.
 - `doctor` checks runtime, display, browser, CEC, CDP, systemd, and API readiness.
 - `service install`, `uninstall`, `show-unit`, `status`, `start`, `stop`,
@@ -132,7 +147,11 @@ injections. Injection failures are logged without stopping playback. Native
 JavaScript dialogs are automatically handled so they cannot block the kiosk.
 The agent periodically reports host/display/browser health and uploads one
 latest in-memory diagnostic screenshot per content item at the configured
-interval; screenshots are not written locally.
+interval; screenshots are not written locally. Persistent agents check
+`/downloads/kiosk-agent.whl` periodically, inspect its redirect filename, verify
+wheel metadata, install newer versions through uv, refresh their unit, and
+restart. Update failures do not stop playback; installation/restart events are
+reported to Manager.
 
 ## HDMI-CEC power schedules
 
@@ -172,6 +191,8 @@ screen = "SCREEN_TOKEN"
 cec_port = "/dev/cec0"
 status_interval = 60
 screenshot_interval = 300
+update_interval = 21600
+auto_update = true
 wayland_display = "wayland-0"
 runtime_dir = "/run/user/1000"
 ```
