@@ -5,7 +5,13 @@ from django.urls import reverse
 
 import pytest
 
-from kiosk_manager.kiosks.models import Content, Screen, ScreenContent
+from kiosk_manager.kiosks.models import (
+    Content,
+    Screen,
+    ScreenContent,
+    ScreenContentScreenshot,
+    ScreenRuntimeStatus,
+)
 
 
 def _html_file():
@@ -245,6 +251,84 @@ def test_html_content_endpoint_hides_disabled_screen(
     )
 
     assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_runtime_status_api_persists_latest_snapshot(client):
+    screen = Screen.objects.create(name="Lobby")
+    content = Content.objects.create(url="https://example.com")
+    ScreenContent.objects.create(screen=screen, content=content)
+
+    response = client.post(
+        f"/api/screens/{screen.public_token}/status",
+        data=json.dumps(
+            {
+                "agent_version": "1.2.3",
+                "browser_version": "Chromium 1",
+                "uptime_seconds": 42,
+                "health_state": "healthy",
+                "current_content_id": content.pk,
+                "desired_power_state": "on",
+                "actual_power_state": "on",
+                "display_identity": "HDMI-A-1",
+                "display_width": 2560,
+                "display_height": 1440,
+                "display_refresh_rate": 59.95,
+                "display_orientation": "normal",
+            }
+        ),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    status = ScreenRuntimeStatus.objects.get(screen=screen)
+    assert status.agent_version == "1.2.3"
+    assert status.current_content_id == content.pk
+    assert status.last_check_in is not None
+
+
+@pytest.mark.django_db
+def test_screenshot_api_keeps_newest_screen_content_image(
+    client, settings, tmp_path
+):
+    settings.MEDIA_ROOT = tmp_path
+    screen = Screen.objects.create(name="Lobby")
+    content = Content.objects.create(url="https://example.com")
+    ScreenContent.objects.create(screen=screen, content=content)
+    png = b"\x89PNG\r\n\x1a\nfirst"
+
+    response = client.post(
+        f"/api/screens/{screen.public_token}/screenshots",
+        data={
+            "content_id": str(content.pk),
+            "captured_at": "2026-01-01T12:00:00Z",
+            "health_state": "healthy",
+            "image": SimpleUploadedFile(
+                "first.png", png, content_type="image/png"
+            ),
+        },
+    )
+    assert response.status_code == 200
+    assert response.json() == {"stored": True}
+
+    response = client.post(
+        f"/api/screens/{screen.public_token}/screenshots",
+        data={
+            "content_id": str(content.pk),
+            "captured_at": "2026-01-01T11:00:00Z",
+            "health_state": "error",
+            "image": SimpleUploadedFile(
+                "older.png", b"\x89PNG\r\n\x1a\nold", content_type="image/png"
+            ),
+        },
+    )
+    assert response.json() == {"stored": False}
+
+    screenshot = ScreenContentScreenshot.objects.get(
+        screen=screen, content=content
+    )
+    assert screenshot.health_state == "healthy"
+    assert screenshot.image.read() == png
 
 
 @pytest.mark.django_db
