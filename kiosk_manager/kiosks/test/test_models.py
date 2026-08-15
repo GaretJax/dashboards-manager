@@ -1,9 +1,11 @@
+from datetime import UTC, datetime
+
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 import pytest
 
-from kiosk_manager.kiosks.models import Page, Screen
+from kiosk_manager.kiosks.models import Page, Screen, ScreenCommand
 from kiosk_manager.kiosks.services import get_screen_configuration
 
 
@@ -126,3 +128,36 @@ def test_page_order_is_unique_per_screen():
             url="https://example.com/second",
             order=1,
         ).validate_constraints()
+
+
+@pytest.mark.django_db
+def test_power_override_takes_precedence_over_schedule():
+    screen = Screen.objects.create(
+        name="Lobby",
+        on_schedule="DTSTART:20260101T080000Z\nRRULE:FREQ=DAILY",
+        off_schedule="DTSTART:20260101T220000Z\nRRULE:FREQ=DAILY",
+    )
+    at = datetime(2026, 1, 2, 23, tzinfo=UTC)
+
+    assert screen.scheduled_power_state(at) == "off"
+    screen.power_override = "on"
+
+    assert screen.desired_power_state(at) == "on"
+
+
+@pytest.mark.django_db
+def test_restart_command_is_idempotent_until_acknowledged():
+    screen = Screen.objects.create(name="Lobby")
+
+    first = screen.request_agent_restart()
+    second = screen.request_agent_restart()
+
+    assert first.pk == second.pk
+    assert ScreenCommand.objects.filter(screen=screen).count() == 1
+
+    first.acknowledged_at = datetime.now(UTC)
+    first.save(update_fields=["acknowledged_at"])
+    third = screen.request_agent_restart()
+
+    assert third.pk != first.pk
+    assert ScreenCommand.objects.filter(screen=screen).count() == 2

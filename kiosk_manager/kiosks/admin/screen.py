@@ -1,27 +1,30 @@
+from urllib.parse import quote
+
 from django.conf import settings
 from django.contrib import admin, messages
+from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
 from adminutils import ModelAdmin, object_action, options
 
-from ..models import Page
+from ..models import PowerState, ScreenContent
 
 
-class PageInline(admin.TabularInline):
-    model = Page
+class ScreenContentInline(admin.TabularInline):
+    model = ScreenContent
     extra = 1
     fields = [
         "order",
-        "url",
-        "html_file",
+        "content",
         "duration_seconds",
-        "preload_delay_seconds",
-        "preload_timeout_seconds",
+        "created_at",
+        "updated_at",
     ]
+    readonly_fields = ["created_at", "updated_at"]
     ordering = ["order", "pk"]
-    verbose_name = _("page")
-    verbose_name_plural = _("pages")
+    verbose_name = _("screen content")
+    verbose_name_plural = _("screen content")
 
 
 class ScreenAdmin(ModelAdmin):
@@ -85,7 +88,7 @@ class ScreenAdmin(ModelAdmin):
     ]
     ordering = ["name", "pk"]
     date_hierarchy = "created_at"
-    inlines = [PageInline]
+    inlines = [ScreenContentInline]
     change_actions = ["rotate_public_token_action"]
 
     @admin.display(description=_("display URL"))
@@ -95,6 +98,89 @@ class ScreenAdmin(ModelAdmin):
             f"{settings.SITE_BASE_PATH}/screens/{screen.public_token}/"
         )
         return format_html('<a href="{0}">{0}</a>', display_url)
+
+    def _agent_install_url(self, screen):
+        if not screen.enabled:
+            return ""
+        origin = settings.SITE_BASE_URL
+        if not origin:
+            hosts = [host for host in settings.ALLOWED_HOSTS if host != "*"]
+            origin = f"https://{hosts[0]}" if hosts else "https://localhost"
+        return (
+            f"{origin}{reverse('kiosks:agent-install')}?screen="
+            f"{quote(screen.public_token, safe='')}"
+        )
+
+    @admin.display(description=_("agent install URL"))
+    @options(desc=_("HTTPS command URL for this screen's agent"))
+    def agent_install_url(self, screen):
+        url = self._agent_install_url(screen)
+        return (
+            format_html('<a href="{0}">{0}</a>', url)
+            if url
+            else _("Enable screen to generate an installer.")
+        )
+
+    @admin.display(description=_("agent install command"))
+    @options(desc=_("Run on the target Debian host"))
+    def agent_install_command(self, screen):
+        url = self._agent_install_url(screen)
+        if not url:
+            return _("Enable screen to generate an installer.")
+        return format_html("<code>curl -fsSL {0} | bash</code>", url)
+
+    @admin.display(description=_("desired power state"))
+    @options(desc=_("Power state currently desired by schedule or override"))
+    def desired_power_state_display(self, screen):
+        return screen.desired_power_state() or _("unknown")
+
+    @admin.display(description=_("pending agent command"))
+    @options(desc=_("Unacknowledged command waiting for agent"))
+    def pending_agent_command_display(self, screen):
+        command = screen.pending_command()
+        return command.command if command is not None else _("none")
+
+    @object_action
+    @options(
+        label=_("Screen on"),
+        desc=_("Temporarily override power schedule and turn screen on"),
+    )
+    def screen_on_action(self, request, screen):
+        screen.power_override = PowerState.ON
+        screen.save(update_fields=["power_override", "updated_at"])
+        messages.success(request, _("Screen on override enabled."))
+
+    @object_action
+    @options(
+        label=_("Screen off"),
+        desc=_("Temporarily override power schedule and turn screen off"),
+    )
+    def screen_off_action(self, request, screen):
+        screen.power_override = PowerState.OFF
+        screen.save(update_fields=["power_override", "updated_at"])
+        messages.success(request, _("Screen off override enabled."))
+
+    @object_action
+    @options(
+        label=_("Follow schedule"),
+        desc=_("Clear temporary power override"),
+    )
+    def follow_schedule_action(self, request, screen):
+        screen.power_override = ""
+        screen.save(update_fields=["power_override", "updated_at"])
+        messages.success(request, _("Screen now follows schedule."))
+
+    @object_action
+    @options(
+        label=_("Restart agent"),
+        desc=_("Queue one restart command for kiosk agent"),
+    )
+    def restart_agent_action(self, request, screen):
+        command = screen.request_agent_restart()
+        messages.success(
+            request,
+            _("Agent restart command queued: %(id)s") % {"id": command.id},
+        )
 
     @object_action
     @options(
