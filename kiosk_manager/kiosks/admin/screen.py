@@ -157,15 +157,6 @@ class ScreenAdmin(ModelAdmin):
             },
         ),
         (
-            _("Power schedule").upper(),
-            {
-                "fields": [
-                    "on_schedule",
-                    "off_schedule",
-                ],
-            },
-        ),
-        (
             _("Status").upper(),
             {
                 "fields": [
@@ -179,6 +170,15 @@ class ScreenAdmin(ModelAdmin):
                     "display_info_display",
                     "desired_power_state_display",
                     "reported_power_state_display",
+                ],
+            },
+        ),
+        (
+            _("Power schedule").upper(),
+            {
+                "fields": [
+                    "on_schedule",
+                    "off_schedule",
                 ],
             },
         ),

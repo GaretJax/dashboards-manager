@@ -39,8 +39,8 @@ def test_screen_admin_exposes_rotate_token_detail_action(admin_client):
     assert screen.public_token != old_token
     assert [title for title, _options in ScreenAdmin.fieldsets] == [
         "SCREEN",
-        "POWER SCHEDULE",
         "STATUS",
+        "POWER SCHEDULE",
         "AGENT INSTALLATION",
         "TIMESTAMPS",
     ]
