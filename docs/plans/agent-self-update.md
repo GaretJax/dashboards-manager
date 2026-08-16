@@ -164,7 +164,7 @@ release artifact; agent accepts only the validated same-origin redirect target.
 Use concise high-level events:
 
 - `update_check_started` — `DEBUG`;
-- `update_available` — `INFO`;
+- `update_available`, `update_started` — `INFO`;
 - `update_download_started` — `INFO`;
 - `update_install_started` — `INFO`;
 - `update_installed` — `INFO`;
@@ -172,7 +172,10 @@ Use concise high-level events:
 - `agent_restarted` — `INFO`;
 - `update_failed` — `WARNING` or `ERROR` depending on stage/recovery.
 
-Include current/remote version, stage, bounded digest prefix, and retry/cooldown
+`update_started` is emitted only by a running agent performing an update, not
+by the manual `kiosk-agent upgrade` command. Its details include `from_version`
+and `to_version`. Include current/remote version, stage, bounded digest prefix,
+and retry/cooldown
 context only. Never include wheel contents, credentials, or raw subprocess
 output. Synchronous flush before restart is required so installation is visible
 even though the old process exits immediately.

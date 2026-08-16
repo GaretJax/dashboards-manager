@@ -2,6 +2,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from kiosk_agent import __version__
 from kiosk_agent.api import PendingCommand, PlaylistItem, ScreenConfig
 from kiosk_agent.runner import AgentRestartRequested, AgentRunner
 from kiosk_agent.update import AgentUpdate
@@ -44,8 +45,51 @@ def test_new_agent_update_installs_and_requests_service_restart(monkeypatch):
     manager.check_agent_update.assert_called_once_with()
     manager.download_agent_wheel.assert_called_once()
     restart.assert_called_once()
+    events = [
+        event
+        for batch in manager.report_events.call_args_list
+        for event in batch.args[0]
+    ]
+    assert any(event["code"] == "update_installed" for event in events)
+    update_started = next(
+        event for event in events if event["code"] == "update_started"
+    )
+    assert update_started["level"] == "INFO"
+    assert update_started["details"] == {
+        "from_version": __version__,
+        "to_version": "0.3.0",
+    }
+
+
+def test_remote_upgrade_command_installs_and_acknowledges(monkeypatch):
+    manager = Mock()
+    manager.check_agent_update.return_value = AgentUpdate(
+        "kiosk_agent-0.3.0-py3-none-any.whl",
+        "https://manager.example/downloads/kiosk_agent-0.3.0-py3-none-any.whl",
+        "0.3.0",
+    )
+    manager.download_agent_wheel.return_value = b"wheel"
+    runner = AgentRunner(
+        manager,
+        Mock(),
+        auto_update=False,
+        config_name="kiosk",
+    )
+    monkeypatch.setattr("kiosk_agent.runner.verify_wheel", Mock())
+    monkeypatch.setattr("kiosk_agent.runner.install_wheel", Mock())
+    monkeypatch.setattr("kiosk_agent.runner.refresh_service", Mock())
+    config = ScreenConfig(
+        version="version",
+        items=(),
+        pending_command=PendingCommand("upgrade-1", "upgrade_agent"),
+    )
+
+    with pytest.raises(AgentRestartRequested):
+        runner._sync_power(config)  # pyright: ignore[reportPrivateUsage]
+
+    manager.report_state.assert_called_once_with("unknown", "upgrade-1")
     assert any(
-        event["code"] == "update_installed"
+        event["code"] == "update_started"
         for batch in manager.report_events.call_args_list
         for event in batch.args[0]
     )

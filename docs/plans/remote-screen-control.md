@@ -10,6 +10,7 @@ Support four intentionally limited remote commands:
 - `screen_off`
 - `follow_schedule`
 - `restart_agent`
+- `upgrade_agent`
 
 No arbitrary shell, browser, display, or CEC commands will be exposed.
 
@@ -41,7 +42,7 @@ Use a small one-shot `ScreenCommand` model rather than a boolean restart flag:
 
 - UUID primary key.
 - Screen foreign key.
-- command choice, currently only `restart_agent`.
+- command choice: `restart_agent` or `upgrade_agent`.
 - created, acknowledged timestamps.
 
 Only the newest unacknowledged command is exposed to an agent. Agent
@@ -59,7 +60,7 @@ added. Extend existing screen configuration response with:
   "desired_power_state": "on" | "off" | null,
   "reported_power_state": "on" | "off" | "unknown" | null,
   "reported_power_at": "..." | null,
-  "pending_command": {"id": "uuid", "command": "restart_agent"} | null
+  "pending_command": {"id": "uuid", "command": "restart_agent" | "upgrade_agent"} | null
 }
 ```
 
@@ -102,6 +103,9 @@ fields. Existing schedule and preload fieldsets remain unchanged.
 - If pending command is `restart_agent`, report acknowledgement, then exit
   cleanly so systemd restarts the process. Direct runs also exit rather than
   invoking arbitrary process-control commands.
+- If pending command is `upgrade_agent`, check/install current Manager wheel,
+  acknowledge only after successful install or no-op, then exit for systemd
+  restart. Leave command pending when upgrade fails.
 - Keep CEC failures retryable and visible in logs; never crash playlist control
   solely because a CEC command failed.
 

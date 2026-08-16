@@ -37,12 +37,14 @@ EVENT_DETAIL_KEYS = {
     "current_version",
     "display_identity",
     "error",
+    "from_version",
     "phase",
     "recovered",
     "remote_version",
     "retry_count",
     "stage",
     "state",
+    "to_version",
     "wheel_filename",
 }
 

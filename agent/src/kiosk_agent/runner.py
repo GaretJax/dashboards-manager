@@ -6,7 +6,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from . import __version__
-from .api import ManagerClient, ManagerError, PlaylistItem, ScreenConfig
+from .api import (
+    UPGRADE_AGENT_COMMAND,
+    ManagerClient,
+    ManagerError,
+    PlaylistItem,
+    ScreenConfig,
+)
 from .browser import BrowserController, BrowserError
 from .cec import CecController, CecError
 from .service import run_systemctl, service_instance_name
@@ -168,12 +174,14 @@ class AgentRunner:
     def _preload_key(config: ScreenConfig, position: int) -> str:
         return f"{config.version[:12]}-{position}"
 
-    def _maybe_update(self):
-        if not self.auto_update or self.config_name is None:
-            return
+    def _maybe_update(self, *, force=False, restart=True):
+        if (not self.auto_update and not force) or self.config_name is None:
+            return None
+        if force and self._failed_update_version is not None:
+            return False
         now = time.monotonic()
-        if now < self._next_update_check:
-            return
+        if not force and now < self._next_update_check:
+            return None
         self._next_update_check = now + self.update_interval
         self.telemetry.emit(
             "update_check_started",
@@ -192,9 +200,9 @@ class AgentRunner:
                 details={"stage": "check", "error": str(exc)[:200]},
             )
             LOGGER.warning("agent update check failed: %s", exc)
-            return
+            return False
         if comparison <= 0 or update.version == self._failed_update_version:
-            return
+            return None
 
         self.telemetry.emit(
             "update_available",
@@ -208,6 +216,15 @@ class AgentRunner:
         )
         wheel_path = None
         try:
+            self.telemetry.emit(
+                "update_started",
+                "INFO",
+                f"Updating agent {__version__} -> {update.version}",
+                details={
+                    "from_version": __version__,
+                    "to_version": update.version,
+                },
+            )
             self.telemetry.emit(
                 "update_download_started",
                 "INFO",
@@ -243,6 +260,8 @@ class AgentRunner:
                     "wheel_filename": update.filename,
                 },
             )
+            if not restart:
+                return True
             if not self.telemetry.events.flush():
                 LOGGER.warning("could not flush agent update events")
             self.telemetry.emit(
@@ -268,6 +287,7 @@ class AgentRunner:
                 details={"stage": "install", "error": str(exc)[:200]},
             )
             LOGGER.warning("agent update failed: %s", exc)
+            return False
         finally:
             if wheel_path is not None:
                 with contextlib.suppress(OSError):
@@ -317,17 +337,30 @@ class AgentRunner:
             actual_power_state=actual_state,
         )
         pending = config.pending_command
-        if actual_state == self._last_reported_power_state and pending is None:
+        upgrade_result = None
+        command_id = pending.id if pending is not None else None
+        if pending is not None and pending.command == UPGRADE_AGENT_COMMAND:
+            upgrade_result = self._maybe_update(force=True, restart=False)
+            upgrade_failed = upgrade_result is not None and not upgrade_result
+            if upgrade_failed:
+                command_id = None
+        if (
+            actual_state == self._last_reported_power_state
+            and command_id is None
+        ):
             return
         try:
-            self.manager.report_state(
-                actual_state,
-                pending.id if pending is not None else None,
-            )
+            self.manager.report_state(actual_state, command_id)
         except ManagerError as exc:
             LOGGER.warning("power state report failed: %s", exc)
             return
         self._last_reported_power_state = actual_state
+        if pending is not None and pending.command == UPGRADE_AGENT_COMMAND:
+            if upgrade_result:
+                if not self.telemetry.events.flush():
+                    LOGGER.warning("could not flush agent upgrade events")
+                raise AgentRestartRequested
+            return
         if pending is not None:
             LOGGER.info(
                 "manager restart command acknowledged id=%s", pending.id

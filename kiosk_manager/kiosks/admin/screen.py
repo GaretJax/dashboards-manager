@@ -158,6 +158,7 @@ class ScreenAdmin(ModelAdmin):
         "screen_off_action",
         "follow_schedule_action",
         "restart_agent_action",
+        "upgrade_agent_action",
         "clear_pending_commands_action",
         "rotate_public_token_action",
     ]
@@ -284,6 +285,18 @@ class ScreenAdmin(ModelAdmin):
         messages.success(
             request,
             _("Agent restart command queued: %(id)s") % {"id": command.id},
+        )
+
+    @object_action
+    @options(
+        label=_("Upgrade agent"),
+        desc=_("Queue an agent upgrade and restart"),
+    )
+    def upgrade_agent_action(self, request, screen):
+        command = screen.request_agent_upgrade(created_by=request.user)
+        messages.success(
+            request,
+            _("Agent upgrade command queued: %(id)s") % {"id": command.id},
         )
 
     @object_action

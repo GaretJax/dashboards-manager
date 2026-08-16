@@ -46,7 +46,7 @@ Agent maps internal failures to a small vocabulary:
   `display_control_failed` — `WARNING` or `ERROR` based on recovery result;
 - `browser_target_failed` — `ERROR`;
 - unrecoverable process/runtime conditions — `CRITICAL`;
-- update lifecycle: `update_check_started`, `update_available`,
+- update lifecycle: `update_check_started`, `update_available`, `update_started`,
   `update_download_started`, `update_install_started`, `update_installed`,
   `update_restart_requested`, `agent_restarted`, and `update_failed`.
 

@@ -37,9 +37,11 @@ class PowerState(models.TextChoices):
 
 class ScreenCommandChoice(models.TextChoices):
     RESTART_AGENT = "restart_agent", _("restart agent")
+    UPGRADE_AGENT = "upgrade_agent", _("upgrade agent")
 
 
 COMMAND_RESTART_AGENT = ScreenCommandChoice.RESTART_AGENT
+COMMAND_UPGRADE_AGENT = ScreenCommandChoice.UPGRADE_AGENT
 
 
 class HealthState(models.TextChoices):
@@ -308,17 +310,29 @@ class Screen(models.Model):
             commands = commands.filter(command=command)
         return commands.order_by("-created_at").first()
 
-    def request_agent_restart(self, created_by=None):
+    def request_agent_command(self, command, created_by=None):
         with transaction.atomic():
             screen = type(self).objects.select_for_update().get(pk=self.pk)
-            pending = screen.pending_command(COMMAND_RESTART_AGENT)
+            pending = screen.pending_command(command)
             if pending is not None:
                 return pending
             return ScreenCommand.objects.create(
                 screen=screen,
-                command=COMMAND_RESTART_AGENT,
+                command=command,
                 created_by=created_by,
             )
+
+    def request_agent_restart(self, created_by=None):
+        return self.request_agent_command(
+            COMMAND_RESTART_AGENT,
+            created_by=created_by,
+        )
+
+    def request_agent_upgrade(self, created_by=None):
+        return self.request_agent_command(
+            COMMAND_UPGRADE_AGENT,
+            created_by=created_by,
+        )
 
     def clear_pending_commands(self, acknowledged_at=None):
         return self.commands.filter(acknowledged_at__isnull=True).update(

@@ -245,6 +245,22 @@ def test_screen_admin_pending_command_shows_metadata_as_code(admin_client):
 
 
 @pytest.mark.django_db
+def test_screen_admin_upgrade_action_is_idempotent(admin_client):
+    screen = Screen.objects.create(name="Lobby")
+    action_url = reverse(
+        "admin:kiosks_screen_actions",
+        kwargs={"pk": screen.pk, "tool": "upgrade_agent_action"},
+    )
+
+    admin_client.post(action_url)
+    admin_client.post(action_url)
+
+    assert screen.commands.count() == 1
+    assert screen.commands.get().command == "upgrade_agent"
+    assert screen.commands.get().created_by.username == "admin"
+
+
+@pytest.mark.django_db
 def test_screen_admin_restart_action_is_idempotent(admin_client):
     screen = Screen.objects.create(name="Lobby")
     action_url = reverse(

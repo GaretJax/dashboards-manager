@@ -24,6 +24,8 @@ DEFAULT_PRELOAD_DELAY_SECONDS = 0.0
 DEFAULT_PRELOAD_TIMEOUT_SECONDS = 30
 POWER_STATES = {"on", "off", "unknown"}
 RESTART_AGENT_COMMAND = "restart_agent"
+UPGRADE_AGENT_COMMAND = "upgrade_agent"
+AGENT_COMMANDS = {RESTART_AGENT_COMMAND, UPGRADE_AGENT_COMMAND}
 
 
 @define(frozen=True, slots=True)
@@ -104,7 +106,7 @@ def _parse_pending_command(value) -> PendingCommand | None:
     if (
         not isinstance(command_id, str)
         or not command_id
-        or command != RESTART_AGENT_COMMAND
+        or command not in AGENT_COMMANDS
     ):
         raise ValueError
     return PendingCommand(command_id, command)

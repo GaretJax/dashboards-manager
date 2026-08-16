@@ -493,6 +493,15 @@ def test_event_api_accepts_high_level_batch(client):
                         "level": "INFO",
                         "message": "Agent started",
                     },
+                    {
+                        "code": "update_started",
+                        "level": "INFO",
+                        "message": "Updating agent",
+                        "details": {
+                            "from_version": "0.2.3",
+                            "to_version": "0.2.4",
+                        },
+                    },
                 ]
             }
         ),
@@ -500,7 +509,7 @@ def test_event_api_accepts_high_level_batch(client):
     )
 
     assert response.status_code == 200
-    assert response.json() == {"accepted": 2}
+    assert response.json() == {"accepted": 3}
     event = Event.objects.get(code="navigation_failed")
     assert event.screen_id == screen.pk
     assert event.content_id == content.pk
