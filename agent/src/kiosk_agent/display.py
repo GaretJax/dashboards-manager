@@ -75,10 +75,9 @@ def display_identities(
     if result.returncode != 0:
         return ()
     identities = []
-    for line in result.stdout.splitlines():
-        match = re.match(r"^(\S+)\s+(?:connected|enabled)\b", line)
-        if match and match.group(1) not in identities:
-            identities.append(match.group(1))
+    for _index, identity, _detail in _active_output_candidates(result.stdout):
+        if identity not in identities:
+            identities.append(identity)
     return tuple(identities)
 
 
@@ -103,17 +102,44 @@ def display_environment_detail(
     )
 
 
-def _parse_display_output(
-    output: str,
-    *,
-    preferred_identity: str | None = None,
-) -> DisplayInfo:
+def _active_output_candidates(output: str):
     lines = output.splitlines()
     candidates = []
     for index, line in enumerate(lines):
         match = re.match(r"^(\S+)\s+(?:connected|enabled)\b(.*)$", line)
         if match:
             candidates.append((index, match.group(1), match.group(2)))
+
+    header_indices = []
+    for index, line in enumerate(lines):
+        match = re.match(
+            r'^(\S+)(?:\s+"[^"]*")?(?:\s+\((?:enabled|disabled)\))?\s*$',
+            line,
+        )
+        if match and not line.endswith(":"):
+            header_indices.append((index, match))
+    for header_position, (index, match) in enumerate(header_indices):
+        end = (
+            header_indices[header_position + 1][0]
+            if header_position + 1 < len(header_indices)
+            else len(lines)
+        )
+        block = "\n".join(lines[index:end])
+        enabled = bool(
+            re.search(r"^\s*Enabled:\s+yes\s*$", block, re.MULTILINE)
+        ) or bool(re.search(r"\(enabled\)\s*$", lines[index]))
+        if enabled:
+            candidates.append((index, match.group(1), block))
+    return candidates
+
+
+def _parse_display_output(
+    output: str,
+    *,
+    preferred_identity: str | None = None,
+) -> DisplayInfo:
+    lines = output.splitlines()
+    candidates = _active_output_candidates(output)
     if not candidates:
         for index, line in enumerate(lines):
             match = re.match(r"^(\S+)\s+.*?(\d{3,5})x(\d{3,5})", line)
@@ -129,17 +155,27 @@ def _parse_display_output(
         ),
         candidates[0],
     )
-    index, identity, _detail = selected
-    block = "\n".join(lines[index : index + 8])
-    mode = re.search(r"(\d{3,5})x(\d{3,5})", block)
+    index, identity, detail = selected
+    block = detail or "\n".join(lines[index : index + 8])
+    current_mode = next(
+        (
+            line
+            for line in block.splitlines()
+            if "current" in line.lower()
+            and re.search(r"\d{3,5}x\d{3,5}", line)
+        ),
+        block,
+    )
+    mode = re.search(r"(\d{3,5})x(\d{3,5})", current_mode)
     if mode is None:
         return DisplayInfo(
             identity=identity, error="active display mode unavailable"
         )
     refresh_match = re.search(
         r"@(?P<at>\d+(?:\.\d+)?)\s*(?:Hz)?"
+        r"|\b(?P<hz>\d+(?:\.\d+)?)\s*Hz\b"
         r"|\d+x\d+\s+(?P<mode>\d+(?:\.\d+)?)",
-        block,
+        current_mode,
     )
     orientation_match = re.search(
         r"\b(normal|left|right|inverted)\b", block, re.IGNORECASE
@@ -149,8 +185,10 @@ def _parse_display_output(
         height = int(mode.group(2))
         refresh_rate = None
         if refresh_match is not None:
-            refresh_value = refresh_match.group("at") or refresh_match.group(
-                "mode"
+            refresh_value = (
+                refresh_match.group("at")
+                or refresh_match.group("hz")
+                or refresh_match.group("mode")
             )
             refresh_rate = float(refresh_value)
     except (TypeError, ValueError, OverflowError):

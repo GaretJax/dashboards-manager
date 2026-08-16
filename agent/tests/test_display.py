@@ -57,6 +57,40 @@ def test_suggests_display_environment_variables_when_missing():
     assert "XDG_RUNTIME_DIR" in display_environment_detail(environment)
 
 
+def test_probes_wlr_randr_output(monkeypatch):
+    monkeypatch.setattr(
+        display_module.shutil, "which", lambda command: command
+    )
+    monkeypatch.setattr(
+        display_module.subprocess,
+        "run",
+        lambda *args, **kwargs: type(
+            "Result",
+            (),
+            {
+                "returncode": 0,
+                "stdout": (
+                    'HDMI-A-1 "Display" (enabled)\n'
+                    "  Physical size: 600x340 mm\n"
+                    "  Modes:\n"
+                    "    2560x1440 px, 59.950000 Hz (preferred, current)\n"
+                ),
+                "stderr": "",
+            },
+        )(),
+    )
+
+    info = probe_display({"WAYLAND_DISPLAY": "wayland-0"})
+
+    assert info.identity == "HDMI-A-1"
+    assert info.width == 2560
+    assert info.height == 1440
+    assert info.refresh_rate == 59.95
+    assert display_identities({"WAYLAND_DISPLAY": "wayland-0"}) == (
+        "HDMI-A-1",
+    )
+
+
 def test_probes_wayland_output(monkeypatch):
     monkeypatch.setattr(
         display_module.shutil, "which", lambda command: command
