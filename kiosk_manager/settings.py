@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 from datetime import timedelta
 from pathlib import Path
 
@@ -160,8 +161,9 @@ CELERY_WORKER_MAX_TASKS_PER_CHILD = 128
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_WORKER_ENABLE_REMOTE_CONTROL = False
 CELERY_WORKER_CANCEL_LONG_RUNNING_TASKS_ON_CONNECTION_LOSS = True
-CELERY_BEAT_SCHEDULE_FILENAME = str(
-    BASE_DIR / ".artifacts" / "celerybeat-schedule"
+CELERY_BEAT_SCHEDULE_FILENAME = os.environ.get(
+    "CELERY_BEAT_SCHEDULE_FILENAME",
+    str(Path(tempfile.gettempdir()) / "celerybeat-schedule"),
 )
 CELERY_TIMEZONE = TIME_ZONE
 EVENT_RETENTION_DAYS = _env_int("EVENT_RETENTION_DAYS", 30)

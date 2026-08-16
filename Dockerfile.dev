@@ -30,4 +30,4 @@ RUN mkdir -p /app/agent-dist && \
 ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 80
-CMD ["uvicorn", "kiosk_manager.asgi:application", "--host", "0.0.0.0", "--port", "80", "--reload"]
+CMD ["uvicorn", "kiosk_manager.asgi:application", "--host", "0.0.0.0", "--port", "80", "--lifespan=off", "--reload"]

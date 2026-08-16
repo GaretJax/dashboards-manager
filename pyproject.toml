@@ -16,6 +16,7 @@ dependencies = [
   "whitenoise[brotli]",
   "django-recurrence>=1.14,<2",
   "django-storage-url>=0.12,<1",
+  "boto3",
 ]
 
 [dependency-groups]
