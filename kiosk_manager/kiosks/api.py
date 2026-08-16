@@ -19,7 +19,7 @@ from .models import (
     HealthState,
     PowerState,
     Screen,
-    ScreenContentScreenshot,
+    ScreenContent,
 )
 from .services import (
     content_url,
@@ -234,24 +234,40 @@ def upload_screenshot(request, token: str):
         raise HttpError(400, "screenshot must be PNG")
     image.seek(0)
 
-    screenshot = ScreenContentScreenshot.objects.filter(
-        screen=screen, content=content
-    ).first()
-    if screenshot is not None and captured_at <= screenshot.captured_at:
+    screen_content = (
+        ScreenContent.objects.filter(screen=screen, content=content)
+        .order_by("pk")
+        .first()
+    )
+    if screen_content is None:
+        raise HttpError(404, "content is not assigned to screen")
+    if (
+        screen_content.screenshot_captured_at is not None
+        and captured_at <= screen_content.screenshot_captured_at
+    ):
         return {"stored": False}
-    old_name = screenshot.image.name if screenshot is not None else None
-    if screenshot is None:
-        screenshot = ScreenContentScreenshot(screen=screen, content=content)
-    screenshot.captured_at = captured_at
-    screenshot.health_state = health_state
-    screenshot.error_summary = request.POST.get("error_summary", "")[:2000]
-    screenshot.image.save(
+    old_name = screen_content.screenshot_image.name or None
+    screen_content.screenshot_captured_at = captured_at
+    screen_content.screenshot_health_state = health_state
+    screen_content.screenshot_error_summary = request.POST.get(
+        "error_summary", ""
+    )[:2000]
+    screen_content.screenshot_image.save(
         f"{screen.pk}/{content.pk}.png",
         image,
         save=False,
     )
-    screenshot.save()
-    if old_name and old_name != screenshot.image.name:
+    screen_content.screenshot_updated_at = timezone.now()
+    screen_content.save(
+        update_fields=[
+            "screenshot_image",
+            "screenshot_captured_at",
+            "screenshot_health_state",
+            "screenshot_error_summary",
+            "screenshot_updated_at",
+        ]
+    )
+    if old_name and old_name != screen_content.screenshot_image.name:
         default_storage.delete(old_name)
     return {"stored": True}
 

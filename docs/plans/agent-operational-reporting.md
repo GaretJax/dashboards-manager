@@ -139,22 +139,20 @@ Keep latest browser/display error fields separate from the overall state. A
 single custom CSS/JavaScript failure or auto-dismissed dialog must be reported
 but must not by itself make content unhealthy or stop playback.
 
-## Screenshot model and upload
+## Screenshot fields and upload
 
-Add `ScreenContentScreenshot` keyed uniquely by `(screen, content)`:
+Store latest screenshot fields directly on each `ScreenContent` row:
 
-- screen foreign key;
-- content foreign key;
-- PNG file field;
-- `captured_at`;
-- health state at capture;
-- optional bounded error summary / display metadata snapshot;
-- `updated_at`.
+- `screenshot_image` PNG file field;
+- `screenshot_captured_at`;
+- `screenshot_health_state`;
+- bounded `screenshot_error_summary`;
+- `screenshot_updated_at`.
 
-This intentionally keeps only one current screenshot per screen/content pair.
-When replacing, save new file then remove old storage object after successful
-replacement. Deleting screen/content removes its screenshot. No screenshot
-history is stored.
+This keeps only one current screenshot per screen-content row. When replacing,
+save new file then remove old storage object after successful replacement.
+Deleting screen content removes its screenshot. No screenshot history is
+stored.
 
 Add multipart endpoint:
 

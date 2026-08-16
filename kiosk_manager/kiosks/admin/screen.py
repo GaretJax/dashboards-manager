@@ -90,13 +90,36 @@ class ScreenContentInline(admin.TabularInline):
         "order",
         "content",
         "duration_seconds",
+        "screenshot_image_link",
+        "screenshot_captured_at",
+        "screenshot_health_state",
+        "screenshot_error_summary",
+        "screenshot_updated_at",
         "created_at",
         "updated_at",
     ]
-    readonly_fields = ["created_at", "updated_at"]
+    readonly_fields = [
+        "screenshot_image_link",
+        "screenshot_captured_at",
+        "screenshot_health_state",
+        "screenshot_error_summary",
+        "screenshot_updated_at",
+        "created_at",
+        "updated_at",
+    ]
     ordering = ["order", "pk"]
     verbose_name = _("screen content")
     verbose_name_plural = _("screen content")
+
+    @admin.display(description=_("screenshot"))
+    @options(desc=_("Latest diagnostic screenshot"))
+    def screenshot_image_link(self, screen_content):
+        if not screen_content or not screen_content.screenshot_image:
+            return _("none")
+        return format_html(
+            '<a href="{}" target="_blank">View screenshot</a>',
+            screen_content.screenshot_image.url,
+        )
 
 
 class ContentAdmin(ModelAdmin):

@@ -7,8 +7,7 @@ from django.utils import timezone
 
 import pytest
 
-from kiosk_manager.kiosks.admin.runtime import ScreenContentScreenshotAdmin
-from kiosk_manager.kiosks.admin.screen import ScreenAdmin
+from kiosk_manager.kiosks.admin.screen import ScreenAdmin, ScreenContentInline
 from kiosk_manager.kiosks.forms import ContentAdminForm, ScreenAdminForm
 from kiosk_manager.kiosks.models import Screen, ScreenCommand
 
@@ -112,8 +111,19 @@ def test_content_admin_form_rejects_media_mime_mismatch():
     assert "media" in form.errors
 
 
-def test_runtime_admin_disables_manual_additions():
-    assert not ScreenContentScreenshotAdmin.has_add_permission(None, None)
+def test_screen_content_inline_exposes_screenshot_fields():
+    assert ScreenContentInline.fields == [
+        "order",
+        "content",
+        "duration_seconds",
+        "screenshot_image_link",
+        "screenshot_captured_at",
+        "screenshot_health_state",
+        "screenshot_error_summary",
+        "screenshot_updated_at",
+        "created_at",
+        "updated_at",
+    ]
 
 
 @pytest.mark.django_db

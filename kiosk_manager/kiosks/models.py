@@ -613,48 +613,6 @@ class Content(models.Model):
             media_format_for_name(self.media.name)
 
 
-class ScreenContentScreenshot(models.Model):
-    screen = models.ForeignKey(
-        Screen,
-        verbose_name=_("screen"),
-        related_name="content_screenshots",
-        on_delete=models.CASCADE,
-    )
-    content = models.ForeignKey(
-        "Content",
-        verbose_name=_("content"),
-        related_name="screenshots",
-        on_delete=models.CASCADE,
-    )
-    image = models.FileField(
-        _("screenshot"),
-        upload_to="screenshots/",
-    )
-    captured_at = models.DateTimeField(_("captured at"))
-    health_state = models.CharField(
-        _("health state"),
-        max_length=16,
-        choices=HealthState.choices,
-        default=HEALTH_UNKNOWN,
-    )
-    error_summary = models.TextField(_("error summary"), blank=True)
-    updated_at = models.DateTimeField(_("updated at"), auto_now=True)
-
-    class Meta:
-        ordering = ["-captured_at", "screen_id", "content_id"]
-        verbose_name = _("screen content screenshot")
-        verbose_name_plural = _("screen content screenshots")
-        constraints = [
-            models.UniqueConstraint(
-                fields=["screen", "content"],
-                name="kiosks_screenshot_screen_content_unique",
-            ),
-        ]
-
-    def __str__(self):
-        return f"{self.screen} · {self.content} · {self.captured_at}"
-
-
 class Event(models.Model):
     screen = models.ForeignKey(
         Screen,
@@ -732,6 +690,32 @@ class ScreenContent(models.Model):
     )
     created_at = models.DateTimeField(_("created at"), auto_now_add=True)
     updated_at = models.DateTimeField(_("updated at"), auto_now=True)
+    screenshot_image = models.FileField(
+        _("screenshot"),
+        upload_to="screenshots/",
+        blank=True,
+        default="",
+    )
+    screenshot_captured_at = models.DateTimeField(
+        _("screenshot captured at"),
+        blank=True,
+        null=True,
+    )
+    screenshot_health_state = models.CharField(
+        _("screenshot health state"),
+        max_length=16,
+        choices=HealthState.choices,
+        default=HEALTH_UNKNOWN,
+    )
+    screenshot_error_summary = models.TextField(
+        _("screenshot error summary"),
+        blank=True,
+    )
+    screenshot_updated_at = models.DateTimeField(
+        _("screenshot updated at"),
+        blank=True,
+        null=True,
+    )
 
     class Meta:
         ordering = ["order", "pk"]
@@ -746,3 +730,10 @@ class ScreenContent(models.Model):
 
     def __str__(self):
         return f"{self.screen} · {self.order} · {self.content}"
+
+    def delete(self, *args, **kwargs):
+        screenshot_name = self.screenshot_image.name or ""
+        result = super().delete(*args, **kwargs)
+        if screenshot_name:
+            default_storage.delete(screenshot_name)
+        return result

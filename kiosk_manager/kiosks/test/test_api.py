@@ -12,7 +12,6 @@ from kiosk_manager.kiosks.models import (
     Event,
     Screen,
     ScreenContent,
-    ScreenContentScreenshot,
 )
 
 HTML_CONTENT = "<!doctype html><h1>Embedded dashboard</h1>"
@@ -460,11 +459,11 @@ def test_screenshot_api_keeps_newest_screen_content_image(
     )
     assert response.json() == {"stored": False}
 
-    screenshot = ScreenContentScreenshot.objects.get(
+    screen_content = ScreenContent.objects.get(
         screen=screen, content=content
     )
-    assert screenshot.health_state == "healthy"
-    assert screenshot.image.read() == png
+    assert screen_content.screenshot_health_state == "healthy"
+    assert screen_content.screenshot_image.read() == png
 
 
 @pytest.mark.django_db
