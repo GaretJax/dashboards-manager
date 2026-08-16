@@ -92,20 +92,12 @@ class ScreenContentInline(admin.TabularInline):
         "duration_seconds",
         "screenshot_image_link",
         "screenshot_captured_at",
-        "screenshot_health_state",
-        "screenshot_error_summary",
-        "screenshot_updated_at",
-        "created_at",
-        "updated_at",
+        "screenshot_health_display",
     ]
     readonly_fields = [
         "screenshot_image_link",
         "screenshot_captured_at",
-        "screenshot_health_state",
-        "screenshot_error_summary",
-        "screenshot_updated_at",
-        "created_at",
-        "updated_at",
+        "screenshot_health_display",
     ]
     ordering = ["order", "pk"]
     verbose_name = _("screen content")
@@ -119,6 +111,39 @@ class ScreenContentInline(admin.TabularInline):
         return format_html(
             '<a href="{}" target="_blank">View screenshot</a>',
             screen_content.screenshot_image.url,
+        )
+
+    @admin.display(description=_("health"))
+    @options(desc=_("Screenshot health state and error"))
+    def screenshot_health_display(self, screen_content):
+        if not screen_content:
+            return "-"
+        health_state = screen_content.screenshot_health_state
+        health_error = screen_content.screenshot_error_summary
+        health_issue = (
+            health_state in {HealthState.DEGRADED, HealthState.ERROR}
+            or bool(health_error)
+        )
+        lines = [
+            display_for_value(not health_issue, _("unknown"), boolean=True),
+        ]
+        if health_error:
+            lines.append(format_html("{}: {}", _("Health"), health_error))
+        elif health_state in {HealthState.DEGRADED, HealthState.ERROR}:
+            lines.append(
+                format_html(
+                    "{}: {}",
+                    _("Health"),
+                    (
+                        screen_content.get_screenshot_health_state_display()
+                        or health_state
+                    ).title(),
+                )
+            )
+        return format_html_join(
+            mark_safe("<br>"),
+            "{}",
+            ((line,) for line in lines),
         )
 
 

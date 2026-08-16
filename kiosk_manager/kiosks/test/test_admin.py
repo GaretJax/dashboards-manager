@@ -9,7 +9,7 @@ import pytest
 
 from kiosk_manager.kiosks.admin.screen import ScreenAdmin, ScreenContentInline
 from kiosk_manager.kiosks.forms import ContentAdminForm, ScreenAdminForm
-from kiosk_manager.kiosks.models import Screen, ScreenCommand
+from kiosk_manager.kiosks.models import Screen, ScreenCommand, ScreenContent
 
 
 @pytest.mark.django_db
@@ -118,12 +118,31 @@ def test_screen_content_inline_exposes_screenshot_fields():
         "duration_seconds",
         "screenshot_image_link",
         "screenshot_captured_at",
-        "screenshot_health_state",
-        "screenshot_error_summary",
-        "screenshot_updated_at",
-        "created_at",
-        "updated_at",
+        "screenshot_health_display",
     ]
+
+
+def test_screen_content_inline_health_uses_boolean_icon_and_details():
+    healthy = str(
+        ScreenContentInline.screenshot_health_display(
+            None,
+            ScreenContent(screenshot_health_state="healthy"),
+        )
+    )
+    unhealthy = str(
+        ScreenContentInline.screenshot_health_display(
+            None,
+            ScreenContent(
+                screenshot_health_state="error",
+                screenshot_error_summary="capture failed",
+            ),
+        )
+    )
+
+    assert "icon-yes.svg" in healthy
+    assert "Health" not in healthy
+    assert "icon-no.svg" in unhealthy
+    assert "Health: capture failed" in unhealthy
 
 
 @pytest.mark.django_db
