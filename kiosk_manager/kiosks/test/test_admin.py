@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
@@ -11,7 +13,11 @@ from kiosk_manager.kiosks.admin.runtime import (
 )
 from kiosk_manager.kiosks.admin.screen import ScreenAdmin
 from kiosk_manager.kiosks.forms import ContentAdminForm, ScreenAdminForm
-from kiosk_manager.kiosks.models import Screen, ScreenCommand
+from kiosk_manager.kiosks.models import (
+    Screen,
+    ScreenCommand,
+    ScreenRuntimeStatus,
+)
 
 
 @pytest.mark.django_db
@@ -35,9 +41,13 @@ def test_screen_admin_exposes_rotate_token_detail_action(admin_client):
         "SCREEN",
         "POWER SCHEDULE",
         "REMOTE STATE",
+        "STATUS",
         "AGENT INSTALLATION",
         "TIMESTAMPS",
     ]
+    fieldsets = dict(ScreenAdmin.fieldsets)
+    assert fieldsets["AGENT INSTALLATION"]["classes"] == ["collapse"]
+    assert fieldsets["TIMESTAMPS"]["classes"] == ["collapse"]
 
 
 @pytest.mark.django_db
@@ -106,6 +116,52 @@ def test_content_admin_form_rejects_media_mime_mismatch():
 def test_runtime_admin_disables_manual_additions():
     assert not ScreenRuntimeStatusAdmin.has_add_permission(None, None)
     assert not ScreenContentScreenshotAdmin.has_add_permission(None, None)
+
+
+@pytest.mark.django_db
+def test_screen_admin_status_displays_formatted_runtime_values():
+    now = timezone.now()
+    screen = Screen.objects.create(name="Lobby")
+    ScreenRuntimeStatus.objects.create(
+        screen=screen,
+        agent_version="0.2.5",
+        browser_version="Chrome/149.0.0.0",
+        agent_started_at=now - timedelta(days=1, hours=2, minutes=3),
+        uptime_seconds=93784,
+        last_check_in=now - timedelta(minutes=5, seconds=2),
+        health_state="degraded",
+        health_error="CEC unavailable",
+        browser_error="page timeout",
+        display_error="HDMI missing",
+        load_1m=0.12,
+        load_5m=0.34,
+        load_15m=0.56,
+        memory_total_bytes=2 * 1024**3,
+        memory_used_bytes=512 * 1024**2,
+        memory_percent=25,
+        display_identity="HDMI-A-1",
+        display_width=1920,
+        display_height=1080,
+        display_refresh_rate=60,
+    )
+
+    assert "0.2.5 / Chrome/149.0.0.0" in str(
+        ScreenAdmin.agent_browser_version_display(None, screen)
+    )
+    assert "1d 2h 3m 4s" in str(ScreenAdmin.agent_uptime_display(None, screen))
+    assert "5m 2s" in str(ScreenAdmin.last_check_in_display(None, screen))
+    health = str(ScreenAdmin.health_display(None, screen))
+    assert all(value in health for value in ("degraded", "CEC unavailable"))
+    assert all(value in health for value in ("page timeout", "HDMI missing"))
+    assert "1m: 0.12 · 5m: 0.34 · 15m: 0.56" in str(
+        ScreenAdmin.load_display(None, screen)
+    )
+    assert "512.0 MiB / 2.0 GiB used (25.0%)" in str(
+        ScreenAdmin.memory_display(None, screen)
+    )
+    assert "HDMI-A-1 · 1920 x 1080 @ 60.0 Hz" in str(
+        ScreenAdmin.display_info_display(None, screen)
+    )
 
 
 def test_screen_admin_schedule_widget_includes_time_control():

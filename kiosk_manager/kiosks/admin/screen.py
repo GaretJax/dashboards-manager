@@ -4,13 +4,71 @@ from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.admin.utils import display_for_value
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
 from adminutils import ModelAdmin, object_action, options
 
 from ..forms import ContentAdminForm, ScreenAdminForm
-from ..models import PowerState, ScreenContent
+from ..models import PowerState, ScreenContent, ScreenRuntimeStatus
+
+
+def _runtime_status(screen):
+    try:
+        return screen.runtime_status
+    except ScreenRuntimeStatus.DoesNotExist:
+        return None
+
+
+def _format_duration(seconds):
+    if seconds is None:
+        return "-"
+    try:
+        remaining = max(0, int(float(seconds)))
+    except TypeError, ValueError, OverflowError:
+        return "-"
+    days, remaining = divmod(remaining, 86400)
+    hours, remaining = divmod(remaining, 3600)
+    minutes, seconds = divmod(remaining, 60)
+    parts = []
+    for value, suffix in (
+        (days, "d"),
+        (hours, "h"),
+        (minutes, "m"),
+        (seconds, "s"),
+    ):
+        if value:
+            parts.append(f"{value}{suffix}")
+    return " ".join(parts) or "0s"
+
+
+def _format_load(value):
+    return "-" if value is None else f"{value:.2f}"
+
+
+def _format_bytes(value):
+    if value is None:
+        return "-"
+    try:
+        size = float(value)
+    except TypeError, ValueError, OverflowError:
+        return "-"
+    units = ("B", "KiB", "MiB", "GiB", "TiB")
+    for unit in units:
+        if abs(size) < 1024 or unit == units[-1]:
+            precision = 0 if unit == "B" else 1
+            return f"{size:.{precision}f} {unit}"
+        size /= 1024
+    return "-"
+
+
+def _status_date(value, duration_seconds):
+    if value is None:
+        return "-"
+    date = display_for_value(value, _("unknown"))
+    duration = _format_duration(duration_seconds)
+    return format_html("{} ({})", date, duration)
 
 
 def _power_state_icon(state):
@@ -112,8 +170,23 @@ class ScreenAdmin(ModelAdmin):
             },
         ),
         (
+            _("Status").upper(),
+            {
+                "fields": [
+                    "agent_browser_version_display",
+                    "agent_uptime_display",
+                    "last_check_in_display",
+                    "health_display",
+                    "load_display",
+                    "memory_display",
+                    "display_info_display",
+                ],
+            },
+        ),
+        (
             _("Agent installation").upper(),
             {
+                "classes": ["collapse"],
                 "fields": [
                     "agent_install_url",
                     "agent_install_command",
@@ -123,6 +196,7 @@ class ScreenAdmin(ModelAdmin):
         (
             _("Timestamps").upper(),
             {
+                "classes": ["collapse"],
                 "fields": [
                     "created_at",
                     "updated_at",
@@ -147,6 +221,13 @@ class ScreenAdmin(ModelAdmin):
         "desired_power_state_display",
         "reported_power_state_display",
         "pending_agent_command_display",
+        "agent_browser_version_display",
+        "agent_uptime_display",
+        "last_check_in_display",
+        "health_display",
+        "load_display",
+        "memory_display",
+        "display_info_display",
         "created_at",
         "updated_at",
     ]
@@ -243,6 +324,107 @@ class ScreenAdmin(ModelAdmin):
             command.command,
             _("created at: %(created_at)s") % {"created_at": created_at},
             _("by: %(created_by)s") % {"created_by": created_by},
+        )
+
+    @admin.display(description=_("agent / Chrome"))
+    @options(desc=_("Versions reported by kiosk agent"))
+    def agent_browser_version_display(self, screen):
+        status = _runtime_status(screen)
+        if status is None:
+            return "-"
+        return format_html(
+            "{} / {}",
+            status.agent_version or "-",
+            status.browser_version or "-",
+        )
+
+    @admin.display(description=_("agent uptime"))
+    @options(desc=_("Agent start time and reported uptime"))
+    def agent_uptime_display(self, screen):
+        status = _runtime_status(screen)
+        if status is None:
+            return "-"
+        uptime = status.uptime_seconds
+        if uptime is None and status.agent_started_at is not None:
+            uptime = (timezone.now() - status.agent_started_at).total_seconds()
+        return _status_date(status.agent_started_at, uptime)
+
+    @admin.display(description=_("last check-in"))
+    @options(desc=_("Last status report and elapsed time"))
+    def last_check_in_display(self, screen):
+        status = _runtime_status(screen)
+        if status is None or status.last_check_in is None:
+            return "-"
+        age = (timezone.now() - status.last_check_in).total_seconds()
+        return _status_date(status.last_check_in, age)
+
+    @admin.display(description=_("health"))
+    @options(desc=_("Health state and browser/display errors"))
+    def health_display(self, screen):
+        status = _runtime_status(screen)
+        if status is None:
+            return "-"
+        return format_html(
+            "health: {}<br>health error: {}<br>browser: {}<br>display: {}",
+            status.get_health_state_display() or status.health_state or "-",
+            status.health_error or "-",
+            status.browser_error or "-",
+            status.display_error or "-",
+        )
+
+    @admin.display(description=_("load"))
+    @options(desc=_("One-, five-, and fifteen-minute load"))
+    def load_display(self, screen):
+        status = _runtime_status(screen)
+        if status is None:
+            return "-"
+        return format_html(
+            "1m: {} · 5m: {} · 15m: {}",
+            _format_load(status.load_1m),
+            _format_load(status.load_5m),
+            _format_load(status.load_15m),
+        )
+
+    @admin.display(description=_("memory"))
+    @options(desc=_("Used and total memory with percentage"))
+    def memory_display(self, screen):
+        status = _runtime_status(screen)
+        if status is None:
+            return "-"
+        percent = (
+            "-"
+            if status.memory_percent is None
+            else f"{status.memory_percent:.1f}%"
+        )
+        return format_html(
+            "{} / {} used ({})",
+            _format_bytes(status.memory_used_bytes),
+            _format_bytes(status.memory_total_bytes),
+            percent,
+        )
+
+    @admin.display(description=_("display"))
+    @options(desc=_("Display name, resolution, and refresh rate"))
+    def display_info_display(self, screen):
+        status = _runtime_status(screen)
+        if status is None:
+            return "-"
+        dimensions = (
+            f"{status.display_width} x {status.display_height}"
+            if status.display_width is not None
+            and status.display_height is not None
+            else "-"
+        )
+        refresh = (
+            "-"
+            if status.display_refresh_rate is None
+            else f"{status.display_refresh_rate:.1f} Hz"
+        )
+        return format_html(
+            "{} · {} @ {}",
+            status.display_identity or "-",
+            dimensions,
+            refresh,
         )
 
     @object_action
