@@ -15,7 +15,7 @@ def test_module_cli_exposes_version():
     result = CliRunner().invoke(main, ["--version"])
 
     assert result.exit_code == 0
-    assert "0.2.1" in result.output
+    assert "0.2.2" in result.output
 
 
 def test_httpx_request_logs_are_demoted_to_debug():
@@ -117,7 +117,8 @@ def test_upgrade_installs_wheel_without_screen_and_restarts_services(
     )
     client.download_agent_wheel.return_value = b"wheel"
     monkeypatch.setattr(cli, "ManagerClient", Mock(return_value=client))
-    monkeypatch.setattr(cli, "verify_wheel", Mock())
+    verify = Mock()
+    monkeypatch.setattr(cli, "verify_wheel", verify)
     monkeypatch.setattr(cli, "install_wheel", Mock())
     monkeypatch.setattr(
         cli,
@@ -137,6 +138,10 @@ def test_upgrade_installs_wheel_without_screen_and_restarts_services(
     cli.ManagerClient.assert_called_once_with("https://manager.example")
     restart.assert_called_once_with(
         "user", "restart", "kiosk-agent@lobby.service"
+    )
+    assert (
+        verify.call_args.args[0].name
+        == client.check_agent_update.return_value.filename
     )
 
 

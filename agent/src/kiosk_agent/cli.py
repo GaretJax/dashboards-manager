@@ -1,4 +1,3 @@
-import contextlib
 import json
 import logging
 import os
@@ -567,16 +566,12 @@ def upgrade_command(config_ref, manager, restart, check):
     finally:
         client.close()
 
-    wheel_path = None
+    wheel_directory = tempfile.TemporaryDirectory(
+        prefix="kiosk-agent-upgrade-"
+    )
     try:
-        with tempfile.NamedTemporaryFile(
-            mode="wb",
-            prefix="kiosk-agent-upgrade-",
-            suffix=".whl",
-            delete=False,
-        ) as handle:
-            handle.write(wheel_bytes)
-            wheel_path = Path(handle.name)
+        wheel_path = Path(wheel_directory.name) / remote.filename
+        wheel_path.write_bytes(wheel_bytes)
         verify_wheel(wheel_path, remote)
         install_wheel(wheel_path, remote)
 
@@ -596,9 +591,7 @@ def upgrade_command(config_ref, manager, restart, check):
     except (OSError, RuntimeError, UpdateError) as exc:
         raise click.ClickException(str(exc)) from exc
     finally:
-        if wheel_path is not None:
-            with contextlib.suppress(OSError):
-                wheel_path.unlink()
+        wheel_directory.cleanup()
 
 
 @main.command()
