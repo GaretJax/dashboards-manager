@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
@@ -7,7 +8,7 @@ from django.utils import timezone
 
 import pytest
 
-from kiosk_manager.kiosks.admin.runtime import EventAdmin
+from kiosk_manager.kiosks.admin.runtime import EventAdmin, EventInline
 from kiosk_manager.kiosks.admin.screen import ScreenAdmin, ScreenContentInline
 from kiosk_manager.kiosks.forms import ContentAdminForm, ScreenAdminForm
 from kiosk_manager.kiosks.models import (
@@ -180,6 +181,34 @@ def test_event_admin_colors_levels():
 
     assert "Warning" in level
     assert "#d97706" in level
+
+
+def test_event_inline_is_readonly():
+    assert EventInline.readonly_fields == EventInline.fields
+    assert not EventInline.has_add_permission(None, None)
+    assert not EventInline.has_change_permission(None, None)
+    assert not EventInline.has_delete_permission(None, None)
+
+
+@pytest.mark.django_db
+def test_event_inline_limits_recent_events():
+    screen = Screen.objects.create(name="Lobby")
+    created_ids = [
+        Event.objects.create(
+            screen=screen,
+            code=f"event_{index}",
+            level="INFO",
+            message=f"event {index}",
+            occurred_at=timezone.now(),
+        ).pk
+        for index in range(6)
+    ]
+    inline = EventInline(Screen, admin.site)
+    formset = inline.get_formset(None, screen)(instance=screen)
+
+    assert [form.instance.pk for form in formset.forms] == list(
+        reversed(created_ids)
+    )[:5]
 
 
 @pytest.mark.django_db

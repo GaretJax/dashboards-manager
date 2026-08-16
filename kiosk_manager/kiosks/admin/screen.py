@@ -17,6 +17,7 @@ from ..models import (
     PowerState,
     ScreenContent,
 )
+from .runtime import EventInline
 
 
 def _runtime_status(screen):
@@ -282,7 +283,7 @@ class ScreenAdmin(ModelAdmin):
     ]
     ordering = ["name", "pk"]
     date_hierarchy = "created_at"
-    inlines = [ScreenContentInline]
+    inlines = [ScreenContentInline, EventInline]
     change_actions = [
         "screen_on_action",
         "screen_off_action",
