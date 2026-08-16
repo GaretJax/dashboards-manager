@@ -33,7 +33,8 @@ def test_new_agent_update_installs_and_requests_service_restart(monkeypatch):
     )
     manager.download_agent_wheel.return_value = b"wheel"
     runner = AgentRunner(manager, Mock(), config_name="kiosk")
-    monkeypatch.setattr("kiosk_agent.runner.verify_wheel", Mock())
+    verify_wheel = Mock()
+    monkeypatch.setattr("kiosk_agent.runner.verify_wheel", verify_wheel)
     monkeypatch.setattr("kiosk_agent.runner.install_wheel", Mock())
     monkeypatch.setattr("kiosk_agent.runner.refresh_service", Mock())
     restart = Mock()
@@ -44,6 +45,10 @@ def test_new_agent_update_installs_and_requests_service_restart(monkeypatch):
 
     manager.check_agent_update.assert_called_once_with()
     manager.download_agent_wheel.assert_called_once()
+    assert (
+        verify_wheel.call_args.args[0].name
+        == manager.check_agent_update.return_value.filename
+    )
     restart.assert_called_once()
     events = [
         event

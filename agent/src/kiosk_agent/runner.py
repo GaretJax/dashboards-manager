@@ -1,5 +1,5 @@
-import contextlib
 import logging
+import shutil
 import tempfile
 import time
 from datetime import UTC, datetime
@@ -214,6 +214,7 @@ class AgentRunner:
                 "wheel_filename": update.filename,
             },
         )
+        wheel_directory = None
         wheel_path = None
         try:
             self.telemetry.emit(
@@ -232,14 +233,12 @@ class AgentRunner:
                 details={"remote_version": update.version},
             )
             wheel_bytes = self.manager.download_agent_wheel(update)
-            with tempfile.NamedTemporaryFile(
-                mode="wb",
-                prefix="kiosk-agent-update-",
-                suffix=".whl",
-                delete=False,
-            ) as handle:
-                handle.write(wheel_bytes)
-                wheel_path = Path(handle.name)
+            wheel_directory = Path(
+                tempfile.mkdtemp(prefix="kiosk-agent-update-")
+            )
+            wheel_filename = Path(update.filename).name
+            wheel_path = wheel_directory / wheel_filename
+            wheel_path.write_bytes(wheel_bytes)
             verify_wheel(wheel_path, update)
             self.telemetry.emit(
                 "update_install_started",
@@ -289,9 +288,8 @@ class AgentRunner:
             LOGGER.warning("agent update failed: %s", exc)
             return False
         finally:
-            if wheel_path is not None:
-                with contextlib.suppress(OSError):
-                    wheel_path.unlink()
+            if wheel_directory is not None:
+                shutil.rmtree(wheel_directory, ignore_errors=True)
 
     def _sync_power(self, config: ScreenConfig):
         desired_state = config.desired_power_state

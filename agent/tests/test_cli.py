@@ -15,7 +15,7 @@ def test_module_cli_exposes_version():
     result = CliRunner().invoke(main, ["--version"])
 
     assert result.exit_code == 0
-    assert "0.2.4" in result.output
+    assert "0.2.5" in result.output
 
 
 def test_httpx_request_logs_are_demoted_to_debug():
