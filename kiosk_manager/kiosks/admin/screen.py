@@ -9,7 +9,7 @@ from django.utils.translation import gettext_lazy as _
 
 from adminutils import ModelAdmin, object_action, options
 
-from ..forms import ScreenAdminForm
+from ..forms import ContentAdminForm, ScreenAdminForm
 from ..models import PowerState, ScreenContent
 
 
@@ -40,6 +40,7 @@ class ScreenContentInline(admin.TabularInline):
 
 
 class ContentAdmin(ModelAdmin):
+    form = ContentAdminForm
     fieldsets = [
         (
             _("Content").upper(),
@@ -48,7 +49,8 @@ class ContentAdmin(ModelAdmin):
                     "id",
                     "label",
                     "url",
-                    "html_file",
+                    "html_upload",
+                    "media",
                     "preload_delay_seconds",
                     "preload_timeout_seconds",
                     "injected_css",
@@ -69,7 +71,7 @@ class ContentAdmin(ModelAdmin):
     ]
     list_display = ["label", "preload_delay_seconds", "updated_at"]
     list_filter = ["created_at", "updated_at"]
-    search_fields = ["label", "url", "html_file"]
+    search_fields = ["label", "url", "html", "media"]
     readonly_fields = ["id", "created_at", "updated_at"]
     ordering = ["-updated_at", "pk"]
     date_hierarchy = "created_at"
@@ -134,7 +136,8 @@ class ScreenAdmin(ModelAdmin):
         "name",
         "public_token",
         "playlist_entries__content__url",
-        "playlist_entries__content__html_file",
+        "playlist_entries__content__html",
+        "playlist_entries__content__media",
     ]
     readonly_fields = [
         "id",

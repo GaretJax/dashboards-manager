@@ -19,7 +19,7 @@ def effective_preload_timeout_seconds(content: Content) -> int:
 
 
 def content_url(screen: Screen, content: Content) -> str:
-    if content.html_file:
+    if content.html or content.media:
         return (
             f"{settings.SITE_BASE_PATH}/screens/{screen.public_token}/"
             f"contents/{content.pk}/"
@@ -65,6 +65,11 @@ def get_screen_configuration(screen: Screen):
             "preload_timeout_seconds": effective_preload_timeout_seconds(
                 entry.content
             ),
+            "html_hash": hashlib.sha256(
+                entry.content.html.encode("utf-8")
+            ).hexdigest(),
+            "media_name": entry.content.media.name or "",
+            "source_updated_at": entry.content.updated_at.isoformat(),
             "injected_css": entry.content.injected_css or "",
             "injected_javascript_before": (
                 entry.content.injected_javascript_before or ""

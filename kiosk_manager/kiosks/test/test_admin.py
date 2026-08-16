@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from django.utils import timezone
 
@@ -9,7 +10,7 @@ from kiosk_manager.kiosks.admin.runtime import (
     ScreenRuntimeStatusAdmin,
 )
 from kiosk_manager.kiosks.admin.screen import ScreenAdmin
-from kiosk_manager.kiosks.forms import ScreenAdminForm
+from kiosk_manager.kiosks.forms import ContentAdminForm, ScreenAdminForm
 from kiosk_manager.kiosks.models import Screen, ScreenCommand
 
 
@@ -37,6 +38,69 @@ def test_screen_admin_exposes_rotate_token_detail_action(admin_client):
         "AGENT INSTALLATION",
         "TIMESTAMPS",
     ]
+
+
+@pytest.mark.django_db
+def test_content_admin_form_stores_html_upload_in_database():
+    form = ContentAdminForm(
+        data={"label": "Dashboard"},
+        files={
+            "html_upload": SimpleUploadedFile(
+                "dashboard.html",
+                b"<!doctype html><h1>Dashboard</h1>",
+                content_type="text/html",
+            )
+        },
+    )
+
+    assert form.is_valid(), form.errors
+    content = form.save()
+
+    assert content.html == "<!doctype html><h1>Dashboard</h1>"
+    assert not content.url
+    assert not content.media
+
+
+@pytest.mark.django_db
+def test_content_admin_form_accepts_chrome_media():
+    form = ContentAdminForm(
+        data={"label": "Image"},
+        files={
+            "media": SimpleUploadedFile(
+                "image.png",
+                (
+                    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+                    b"\x00\x00\x00\x01\x00\x00\x00\x01"
+                    b"\x08\x04\x00\x00\x00\xb5\x1c\x0c\x02"
+                    b"\x00\x00\x00\x0bIDATx\x9cc``\x00\x00\x00\x04"
+                    b"\x00\x01\x0d\n\x2d\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+                ),
+                content_type="image/png",
+            )
+        },
+    )
+
+    assert form.is_valid(), form.errors
+    content = form.save()
+
+    assert content.media.name.startswith("contents/image")
+    assert content.media.name.endswith(".png")
+
+
+def test_content_admin_form_rejects_media_mime_mismatch():
+    form = ContentAdminForm(
+        data={"label": "Image"},
+        files={
+            "media": SimpleUploadedFile(
+                "image.png",
+                b"GIF89a\x01\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+                content_type="image/png",
+            )
+        },
+    )
+
+    assert not form.is_valid()
+    assert "media" in form.errors
 
 
 def test_runtime_admin_disables_manual_additions():
@@ -88,6 +152,15 @@ def test_screen_admin_unknown_power_state_uses_unknown_icon():
     reported = ScreenAdmin.reported_power_state_display(None, screen)
 
     assert "icon-unknown.svg" in str(reported)
+
+
+@pytest.mark.django_db
+def test_content_admin_shows_source_upload_fields(admin_client):
+    response = admin_client.get(reverse("admin:kiosks_content_add"))
+
+    assert response.status_code == 200
+    assert 'name="html_upload"' in response.text
+    assert 'name="media"' in response.text
 
 
 @pytest.mark.django_db

@@ -17,6 +17,7 @@ dependencies = [
   "django-recurrence>=1.14,<2",
   "django-storage-url>=0.12,<1",
   "boto3",
+  "python-magic>=0.4.27",
 ]
 
 [dependency-groups]

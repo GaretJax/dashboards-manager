@@ -1,8 +1,9 @@
 import shlex
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, render
 from django.template.loader import render_to_string
@@ -10,7 +11,7 @@ from django.urls import reverse
 from django.utils.text import slugify
 
 from .agent_package import agent_wheel_path
-from .models import Content, Screen
+from .models import Content, Screen, media_format_for_name
 
 
 def screen_display(request, token):
@@ -105,22 +106,53 @@ def content_content(request, token, content_id):
         ),
         pk=content_id,
     )
-    if not content.html_file:
-        raise Http404("content does not contain an HTML file")
+    if content.html:
+        # nosemgrep: python.django.security.audit.xss.direct-use-of-httpresponse.direct-use-of-httpresponse
+        response = HttpResponse(
+            content.html,
+            content_type="text/html; charset=utf-8",
+        )
+        response["Cache-Control"] = "no-store"
+        response["Content-Security-Policy"] = (
+            "default-src 'none'; style-src 'unsafe-inline'; "
+            "script-src 'unsafe-inline'; img-src data:; font-src data:; "
+            "object-src 'none'; frame-src 'none'; connect-src 'none'"
+        )
+        response["X-Content-Type-Options"] = "nosniff"
+        response["X-Frame-Options"] = "SAMEORIGIN"
+        return response
+    if not content.media:
+        raise Http404("content does not contain HTML or media")
     try:
-        with content.html_file.open("rb") as uploaded_file:
-            content = uploaded_file.read()
-    except OSError as exc:
-        raise Http404("HTML file is unavailable") from exc
+        media_kind, media_type = media_format_for_name(content.media.name)
+        media_url = content.media.url
+    except (OSError, ValidationError, ValueError) as exc:
+        raise Http404("media file is unavailable") from exc
 
-    # nosemgrep: python.django.security.audit.xss.direct-use-of-httpresponse.direct-use-of-httpresponse
-    response = HttpResponse(content, content_type="text/html; charset=utf-8")
+    media_origin = _media_origin(media_url)
+    response = render(
+        request,
+        "kiosks/content_media.html",
+        {
+            "content": content,
+            "media_kind": media_kind,
+            "media_type": media_type,
+            "media_url": media_url,
+        },
+    )
     response["Cache-Control"] = "no-store"
     response["Content-Security-Policy"] = (
         "default-src 'none'; style-src 'unsafe-inline'; "
-        "script-src 'unsafe-inline'; img-src data:; font-src data:; "
+        f"img-src {media_origin}; media-src {media_origin}; "
         "object-src 'none'; frame-src 'none'; connect-src 'none'"
     )
     response["X-Content-Type-Options"] = "nosniff"
     response["X-Frame-Options"] = "SAMEORIGIN"
     return response
+
+
+def _media_origin(media_url):
+    parsed = urlsplit(media_url)
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return "'self'"

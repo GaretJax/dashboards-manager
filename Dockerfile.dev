@@ -13,6 +13,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_LINK_MODE=copy
 WORKDIR /app
 
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libmagic1 && \
+    rm -rf /var/lib/apt/lists/*
+
 COPY --from=uv /usr/local/bin/uv /usr/local/bin/uvx /bin/
 
 RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \

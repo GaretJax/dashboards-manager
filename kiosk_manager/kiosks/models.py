@@ -1,9 +1,11 @@
 import secrets
 import uuid
 from decimal import Decimal
+from pathlib import Path
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.files.storage import default_storage
 from django.core.validators import (
     FileExtensionValidator,
     MaxLengthValidator,
@@ -15,6 +17,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
+import magic
 from recurrence.fields import RecurrenceField
 
 DEFAULT_PRELOAD_DELAY_SECONDS = Decimal("0")
@@ -52,6 +55,64 @@ class EventLevel(models.TextChoices):
     WARNING = "WARNING", _("warning")
     ERROR = "ERROR", _("error")
     CRITICAL = "CRITICAL", _("critical")
+
+
+class MediaKind(models.TextChoices):
+    IMAGE = "image", _("image")
+    VIDEO = "video", _("video")
+
+
+MAX_HTML_LENGTH = 1024 * 1024
+MEDIA_FORMATS = {
+    ".jpg": (MediaKind.IMAGE, "image/jpeg"),
+    ".jpeg": (MediaKind.IMAGE, "image/jpeg"),
+    ".png": (MediaKind.IMAGE, "image/png"),
+    ".gif": (MediaKind.IMAGE, "image/gif"),
+    ".webp": (MediaKind.IMAGE, "image/webp"),
+    ".avif": (MediaKind.IMAGE, "image/avif"),
+    ".svg": (MediaKind.IMAGE, "image/svg+xml"),
+    ".mp4": (MediaKind.VIDEO, "video/mp4"),
+    ".webm": (MediaKind.VIDEO, "video/webm"),
+}
+MEDIA_MIME_ALIASES = {
+    "image/svg+xml": {"image/svg+xml", "application/xml", "text/xml"},
+}
+
+
+def media_format_for_name(name: str) -> tuple[MediaKind, str]:
+    extension = Path(name).suffix.lower()
+    try:
+        return MEDIA_FORMATS[extension]
+    except KeyError as exc:
+        raise ValidationError(
+            {"media": _("Unsupported media file format.")}
+        ) from exc
+
+
+def validate_media_upload(uploaded_file):
+    _kind, expected_mime = media_format_for_name(uploaded_file.name or "")
+    position = uploaded_file.tell()
+    try:
+        uploaded_file.seek(0)
+        detected_mime = magic.from_buffer(uploaded_file.read(8192), mime=True)
+    except (OSError, TypeError, ValueError, magic.MagicException) as exc:
+        raise ValidationError(
+            {"media": _("Could not inspect media file.")}
+        ) from exc
+    finally:
+        uploaded_file.seek(position)
+    accepted_mimes = MEDIA_MIME_ALIASES.get(expected_mime, {expected_mime})
+    if detected_mime not in accepted_mimes:
+        raise ValidationError(
+            {
+                "media": _(
+                    "Media content does not match its file extension "
+                    "(%(mime)s detected)."
+                )
+                % {"mime": detected_mime}
+            }
+        )
+    return _kind, expected_mime
 
 
 HEALTH_UNKNOWN = HealthState.UNKNOWN
@@ -327,13 +388,25 @@ class Content(models.Model):
         blank=True,
         default="",
     )
-    html_file = models.FileField(
-        _("HTML file"),
+    html = models.TextField(
+        _("HTML"),
+        blank=True,
+        default="",
+        max_length=MAX_HTML_LENGTH,
+        validators=[MaxLengthValidator(MAX_HTML_LENGTH)],
+        help_text=_("Full self-contained HTML document."),
+    )
+    media = models.FileField(
+        _("media file"),
         upload_to="contents/",
         blank=True,
         default="",
-        validators=[FileExtensionValidator(["html", "htm"])],
-        help_text=_("Upload one self-contained HTML file instead of a URL."),
+        validators=[
+            FileExtensionValidator(
+                [Path(extension).name[1:] for extension in MEDIA_FORMATS]
+            )
+        ],
+        help_text=_("Upload a Chrome-compatible image or video."),
     )
     preload_delay_seconds = models.DecimalField(
         _("preload delay (seconds)"),
@@ -389,29 +462,63 @@ class Content(models.Model):
         constraints = [
             models.CheckConstraint(
                 condition=(
-                    (models.Q(url__gt="") & models.Q(html_file=""))
-                    | (models.Q(url="") & models.Q(html_file__gt=""))
+                    (
+                        ~models.Q(url="")
+                        & models.Q(html="")
+                        & models.Q(media="")
+                    )
+                    | (
+                        models.Q(url="")
+                        & ~models.Q(html="")
+                        & models.Q(media="")
+                    )
+                    | (
+                        models.Q(url="")
+                        & models.Q(html="")
+                        & ~models.Q(media="")
+                    )
                 ),
-                name="kiosks_content_url_xor_html",
+                name="kiosks_content_single_source",
             ),
         ]
 
     def __str__(self):
-        return (
-            self.label or self.url or self.html_file.name or _("HTML content")
-        )
+        return self.label or self.url or self.media.name or _("HTML content")
+
+    def save(self, *args, **kwargs):
+        old_media_name = ""
+        if self.pk:
+            old_media_name = (
+                type(self)
+                .objects.filter(pk=self.pk)
+                .values_list("media", flat=True)
+                .first()
+                or ""
+            )
+        super().save(*args, **kwargs)
+        new_media_name = self.media.name or ""
+        if old_media_name and old_media_name != new_media_name:
+            default_storage.delete(old_media_name)
+
+    def delete(self, *args, **kwargs):
+        media_name = self.media.name or ""
+        result = super().delete(*args, **kwargs)
+        if media_name:
+            default_storage.delete(media_name)
+        return result
 
     def clean(self):
         super().clean()
         has_url = bool(self.url)
-        has_html = bool(self.html_file)
-        if has_url == has_html:
-            raise ValidationError(
-                {
-                    "url": _("Provide URL or HTML file, not both."),
-                    "html_file": _("Provide URL or HTML file, not both."),
-                }
+        has_html = bool(self.html)
+        has_media = bool(self.media)
+        if sum((has_url, has_html, has_media)) != 1:
+            message = _(
+                "Provide exactly one URL, HTML document, or media file."
             )
+            raise ValidationError(message)
+        if has_media:
+            media_format_for_name(self.media.name)
 
 
 class ScreenRuntimeStatus(models.Model):

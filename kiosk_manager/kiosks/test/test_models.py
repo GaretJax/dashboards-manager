@@ -15,10 +15,6 @@ from kiosk_manager.kiosks.models import (
 from kiosk_manager.kiosks.services import get_screen_configuration
 
 
-def _content_file(name="content.html", content=b"<h1>Hello</h1>"):
-    return SimpleUploadedFile(name, content, content_type="text/html")
-
-
 @pytest.mark.django_db
 def test_screen_generates_public_token():
     screen = Screen.objects.create(name="Lobby")
@@ -84,6 +80,23 @@ def test_configuration_version_changes_when_injection_changes():
 
 
 @pytest.mark.django_db
+@pytest.mark.django_db
+def test_configuration_version_changes_when_source_changes():
+    screen = Screen.objects.create(name="Lobby")
+    content = Content.objects.create(url="https://example.com")
+    ScreenContent.objects.create(screen=screen, content=content)
+
+    original_version, _items = get_screen_configuration(screen)
+    content.url = ""
+    content.media = SimpleUploadedFile("image.png", b"image")
+    content.save()
+
+    updated_version, _items = get_screen_configuration(screen)
+
+    assert updated_version != original_version
+
+
+@pytest.mark.django_db
 def test_content_label_is_used_for_string_representation():
     content = Content(label="Lobby dashboard", url="https://example.com")
 
@@ -91,24 +104,24 @@ def test_content_label_is_used_for_string_representation():
 
 
 @pytest.mark.django_db
-def test_content_requires_url_xor_html_file():
+def test_content_requires_single_source():
     with pytest.raises(ValidationError):
         Content().full_clean()
     with pytest.raises(ValidationError):
         Content(
             url="https://example.com",
-            html_file=_content_file(),
+            html="<h1>Hello</h1>",
         ).full_clean()
 
-    content = Content(label="Uploaded content", html_file=_content_file())
+    content = Content(label="Uploaded content", html="<h1>Hello</h1>")
     content.full_clean()
-    assert content.html_file.name == "content.html"
+    assert content.html == "<h1>Hello</h1>"
 
 
 @pytest.mark.django_db
-def test_content_rejects_non_html_upload():
+def test_content_rejects_unsupported_media_upload():
     content = Content(
-        html_file=SimpleUploadedFile("page.txt", b"hello"),
+        media=SimpleUploadedFile("page.txt", b"hello"),
     )
 
     with pytest.raises(ValidationError):

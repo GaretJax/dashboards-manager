@@ -15,13 +15,7 @@ from kiosk_manager.kiosks.models import (
     ScreenRuntimeStatus,
 )
 
-
-def _html_file():
-    return SimpleUploadedFile(
-        "dashboard.html",
-        b"<!doctype html><h1>Embedded dashboard</h1>",
-        content_type="text/html",
-    )
+HTML_CONTENT = "<!doctype html><h1>Embedded dashboard</h1>"
 
 
 @pytest.mark.django_db
@@ -241,7 +235,7 @@ def test_screen_config_api_returns_internal_url_for_html_content(
 ):
     settings.MEDIA_ROOT = tmp_path
     screen = Screen.objects.create(name="Lobby")
-    content = Content.objects.create(html_file=_html_file())
+    content = Content.objects.create(html=HTML_CONTENT)
     ScreenContent.objects.create(screen=screen, content=content)
 
     response = client.get(f"/api/screens/{screen.public_token}/config")
@@ -258,7 +252,7 @@ def test_html_content_endpoint_returns_uploaded_file(
 ):
     settings.MEDIA_ROOT = tmp_path
     screen = Screen.objects.create(name="Lobby")
-    content = Content.objects.create(html_file=_html_file())
+    content = Content.objects.create(html=HTML_CONTENT)
     ScreenContent.objects.create(screen=screen, content=content)
 
     response = client.get(
@@ -275,12 +269,91 @@ def test_html_content_endpoint_returns_uploaded_file(
 
 
 @pytest.mark.django_db
+def test_media_content_uses_same_config_endpoint(client, settings, tmp_path):
+    settings.MEDIA_ROOT = tmp_path
+    screen = Screen.objects.create(name="Lobby")
+    content = Content.objects.create(
+        media=SimpleUploadedFile(
+            "dashboard.png", b"image", content_type="image/png"
+        )
+    )
+    ScreenContent.objects.create(screen=screen, content=content)
+
+    response = client.get(f"/api/screens/{screen.public_token}/config")
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["url"] == (
+        f"/screens/{screen.public_token}/contents/{content.pk}/"
+    )
+
+
+@pytest.mark.django_db
+def test_image_content_endpoint_renders_centered_media_page(
+    client, settings, tmp_path
+):
+    settings.MEDIA_ROOT = tmp_path
+    screen = Screen.objects.create(name="Lobby")
+    content = Content.objects.create(
+        label="Lobby image",
+        media=SimpleUploadedFile(
+            "dashboard.png", b"image", content_type="image/png"
+        ),
+    )
+    ScreenContent.objects.create(screen=screen, content=content)
+
+    response = client.get(
+        reverse(
+            "kiosks:content-content",
+            args=[screen.public_token, content.pk],
+        )
+    )
+
+    assert response.status_code == 200
+    assert b"content-image" in response.content
+    assert b"max-width: 100%" in response.content
+    assert b"max-height: 100%" in response.content
+    assert b"background: #000" in response.content
+    assert response["Content-Security-Policy"].startswith("default-src 'none'")
+    assert "img-src 'self'" in response["Content-Security-Policy"]
+
+
+@pytest.mark.django_db
+def test_video_content_endpoint_renders_muted_autoplay_player(
+    client, settings, tmp_path
+):
+    settings.MEDIA_ROOT = tmp_path
+    screen = Screen.objects.create(name="Lobby")
+    content = Content.objects.create(
+        media=SimpleUploadedFile(
+            "dashboard.mp4", b"video", content_type="video/mp4"
+        )
+    )
+    ScreenContent.objects.create(screen=screen, content=content)
+
+    response = client.get(
+        reverse(
+            "kiosks:content-content",
+            args=[screen.public_token, content.pk],
+        )
+    )
+
+    assert response.status_code == 200
+    assert b"<video" in response.content
+    assert b"autoplay" in response.content
+    assert b"muted" in response.content
+    assert b"playsinline" in response.content
+    assert b"controls" not in response.content
+    assert b'type="video/mp4"' in response.content
+    assert "media-src 'self'" in response["Content-Security-Policy"]
+
+
+@pytest.mark.django_db
 def test_html_content_endpoint_hides_disabled_screen(
     client, settings, tmp_path
 ):
     settings.MEDIA_ROOT = tmp_path
     screen = Screen.objects.create(name="Lobby", enabled=False)
-    content = Content.objects.create(html_file=_html_file())
+    content = Content.objects.create(html=HTML_CONTENT)
     ScreenContent.objects.create(screen=screen, content=content)
 
     response = client.get(
