@@ -2,6 +2,7 @@ import re
 
 from django.conf import settings
 from django.contrib import admin
+from django.core.files.storage import default_storage
 from django.http import JsonResponse
 from django.shortcuts import redirect
 from django.urls import include, path, re_path
@@ -34,6 +35,10 @@ if settings.ENVIRONMENT in {"local", "test"}:
         re_path(
             media_url_pattern,
             serve,
-            {"document_root": settings.MEDIA_ROOT},
+            {
+                "document_root": getattr(
+                    default_storage, "location", settings.MEDIA_ROOT
+                )
+            },
         )
     ]
