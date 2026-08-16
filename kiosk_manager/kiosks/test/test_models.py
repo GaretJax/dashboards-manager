@@ -69,6 +69,21 @@ def test_playlist_is_ordered_and_configuration_has_version():
 
 
 @pytest.mark.django_db
+def test_configuration_version_changes_when_injection_changes():
+    screen = Screen.objects.create(name="Lobby")
+    content = Content.objects.create(url="https://example.com")
+    ScreenContent.objects.create(screen=screen, content=content)
+
+    original_version, _items = get_screen_configuration(screen)
+    content.injected_css = ".public-dashboard-footer { display: none; }"
+    content.save(update_fields=["injected_css"])
+
+    updated_version, _items = get_screen_configuration(screen)
+
+    assert updated_version != original_version
+
+
+@pytest.mark.django_db
 def test_content_label_is_used_for_string_representation():
     content = Content(label="Lobby dashboard", url="https://example.com")
 

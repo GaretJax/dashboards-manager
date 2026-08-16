@@ -57,6 +57,7 @@ def load_config(config_ref: str | Path) -> dict:
         "update_interval",
         "auto_update",
         "log_level",
+        "event_level",
         "cec_port",
         "display",
         "display_identity",
@@ -96,6 +97,7 @@ def merge_config(
         "update_interval": 21600.0,
         "auto_update": True,
         "log_level": "INFO",
+        "event_level": "DEBUG",
         "cec_port": None,
         "display": None,
         "display_identity": None,
@@ -136,17 +138,18 @@ def merge_config(
         values["display_identity"], str
     ):
         raise ConfigError("display_identity must be a string")
-    if not isinstance(values["log_level"], str):
-        raise ConfigError("log_level must be a string")
-    values["log_level"] = values["log_level"].upper()
-    if values["log_level"] not in {
-        "DEBUG",
-        "INFO",
-        "WARNING",
-        "ERROR",
-        "CRITICAL",
-    }:
-        raise ConfigError("log_level is invalid")
+    for key in ("log_level", "event_level"):
+        if not isinstance(values[key], str):
+            raise ConfigError(f"{key} must be a string")
+        values[key] = values[key].upper()
+        if values[key] not in {
+            "DEBUG",
+            "INFO",
+            "WARNING",
+            "ERROR",
+            "CRITICAL",
+        }:
+            raise ConfigError(f"{key} is invalid")
     return values
 
 

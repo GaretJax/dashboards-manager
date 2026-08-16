@@ -197,11 +197,15 @@ status_interval = 60
 screenshot_interval = 300
 update_interval = 21600
 auto_update = true
+event_level = "WARNING" # Minimum upstream event severity.
 wayland_display = "wayland-0"
 runtime_dir = "/run/user/1000"
 ```
 
-Run with a full config path; command-line options override TOML.
+Run with a full config path; command-line options override TOML. Set
+`event_level` to `INFO`, `WARNING`, `ERROR`, or `CRITICAL` to reduce upstream
+telemetry; default is `DEBUG`. `--event-level` and
+`KIOSK_AGENT_EVENT_LEVEL` provide equivalent overrides.
 
 ```shell
 kiosk-agent run --config "$HOME/.config/kiosk-agent/lobby.toml"

@@ -137,6 +137,13 @@ def main():
     default=None,
     envvar="KIOSK_AGENT_LOG_LEVEL",
 )
+@click.option(
+    "--event-level",
+    type=click.Choice(LOG_LEVELS, case_sensitive=False),
+    default=None,
+    envvar="KIOSK_AGENT_EVENT_LEVEL",
+    help="Minimum severity reported to Manager.",
+)
 def run(
     config_ref,
     manager,
@@ -154,6 +161,7 @@ def run(
     update_interval,
     auto_update,
     log_level,
+    event_level,
 ):
     """Launch Chromium and run screen playlist."""
     try:
@@ -175,6 +183,7 @@ def run(
                 "update_interval": update_interval,
                 "auto_update": auto_update,
                 "log_level": log_level,
+                "event_level": event_level,
             },
         )
     except ConfigError as exc:
@@ -194,6 +203,7 @@ def run(
     update_interval = values["update_interval"]
     auto_update = values["auto_update"]
     log_level = values["log_level"]
+    event_level = values["event_level"]
     if profile_dir:
         profile_dir = Path(profile_dir)
     if profile_dir and ephemeral_profile:
@@ -241,6 +251,7 @@ def run(
             update_interval=update_interval,
             auto_update=auto_update,
             config_name=config_ref,
+            event_level=event_level,
         )
         runner.run()
     except AgentRestartRequested:
@@ -409,6 +420,13 @@ def _bootstrap_cec(cec_port, non_interactive):
 @click.option(
     "--screenshot-interval", type=click.FloatRange(min=1), default=None
 )
+@click.option(
+    "--event-level",
+    type=click.Choice(LOG_LEVELS, case_sensitive=False),
+    default=None,
+    envvar="KIOSK_AGENT_EVENT_LEVEL",
+    help="Minimum severity reported to Manager.",
+)
 @click.option("--non-interactive", is_flag=True)
 @click.option("--force", is_flag=True, help="Replace existing config.")
 def bootstrap(
@@ -424,6 +442,7 @@ def bootstrap(
     poll_interval,
     status_interval,
     screenshot_interval,
+    event_level,
     non_interactive,
     force,
 ):
@@ -465,6 +484,7 @@ def bootstrap(
         "poll_interval": poll_interval,
         "status_interval": status_interval,
         "screenshot_interval": screenshot_interval,
+        "event_level": event_level,
     }
     try:
         values = merge_config(config_file, overrides, allow_missing=True)
@@ -794,6 +814,13 @@ def service():
     default=None,
     envvar="KIOSK_AGENT_LOG_LEVEL",
 )
+@click.option(
+    "--event-level",
+    type=click.Choice(LOG_LEVELS, case_sensitive=False),
+    default=None,
+    envvar="KIOSK_AGENT_EVENT_LEVEL",
+    help="Minimum severity reported to Manager.",
+)
 @click.option("--scope", type=click.Choice(["user", "system"]), default="user")
 @click.option("--user", "service_user")
 @click.option("--display")
@@ -820,6 +847,7 @@ def service_install(
     update_interval,
     auto_update,
     log_level,
+    event_level,
     scope,
     service_user,
     display,
@@ -851,6 +879,7 @@ def service_install(
                 "update_interval": update_interval,
                 "auto_update": auto_update,
                 "log_level": log_level,
+                "event_level": event_level,
                 "display": display,
                 "wayland_display": wayland_display,
                 "runtime_dir": runtime_dir,

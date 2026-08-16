@@ -65,6 +65,13 @@ def get_screen_configuration(screen: Screen):
             "preload_timeout_seconds": effective_preload_timeout_seconds(
                 entry.content
             ),
+            "injected_css": entry.content.injected_css or "",
+            "injected_javascript_before": (
+                entry.content.injected_javascript_before or ""
+            ),
+            "injected_javascript_after": (
+                entry.content.injected_javascript_after or ""
+            ),
         }
         for entry in entries
     ]

@@ -64,10 +64,15 @@ def test_merge_config_applies_cli_overrides(monkeypatch, tmp_path):
 
     values = config.merge_config(
         "lobby",
-        {"screen": "CLI", "cec_port": "/dev/cec0"},
+        {
+            "screen": "CLI",
+            "cec_port": "/dev/cec0",
+            "event_level": "warning",
+        },
     )
 
     assert values["screen"] == "CLI"
+    assert values["event_level"] == "WARNING"
     assert values["poll_interval"] == 20
     assert values["cec_port"] == "/dev/cec0"
 

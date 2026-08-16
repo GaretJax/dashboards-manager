@@ -8,13 +8,26 @@ from attrs import define, field
 from .api import ManagerClient, ManagerError
 
 _EVENT_CODE = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
+_EVENT_LEVELS = {
+    "DEBUG": 10,
+    "INFO": 20,
+    "WARNING": 30,
+    "ERROR": 40,
+    "CRITICAL": 50,
+}
 
 
 @define(slots=True)
 class AgentEventReporter:
     manager: ManagerClient
+    minimum_level: str = "DEBUG"
     _queue: deque = field(factory=lambda: deque(maxlen=100), repr=False)
     _lock: threading.RLock = field(factory=threading.RLock, repr=False)
+
+    def __attrs_post_init__(self):
+        self.minimum_level = self.minimum_level.upper()
+        if self.minimum_level not in _EVENT_LEVELS:
+            raise ValueError("invalid minimum event level")
 
     def emit(
         self,
@@ -29,6 +42,11 @@ class AgentEventReporter:
     ):
         if not _EVENT_CODE.fullmatch(code):
             raise ValueError("invalid event code")
+        level = level.upper()
+        if level not in _EVENT_LEVELS:
+            raise ValueError("invalid event level")
+        if _EVENT_LEVELS[level] < _EVENT_LEVELS[self.minimum_level]:
+            return
         event = {
             "code": code,
             "level": level,

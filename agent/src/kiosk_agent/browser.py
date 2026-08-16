@@ -224,6 +224,7 @@ class BrowserController:
                 job.url,
                 job.preload_delay_seconds,
                 job.timeout_seconds,
+                job.injected_css,
             )
             job.loaded = load_event_received
             if load_event_received and job.preload_delay_seconds > 0:
@@ -443,6 +444,30 @@ class BrowserController:
         except BrowserError as exc:
             LOGGER.warning("JavaScript injection installation failed: %s", exc)
 
+    def _install_current_css(
+        self, socket: websocket.WebSocket, injected_css: str
+    ):
+        expression = (
+            "(() => {"
+            "const id = 'kiosk-agent-injected-css';"
+            "let style = document.getElementById(id);"
+            "if (!style) {"
+            "style = document.createElement('style');"
+            "style.id = id;"
+            "(document.head || document.documentElement).appendChild(style);"
+            "}"
+            f"style.textContent = {json.dumps(injected_css)};"
+            "})()"
+        )
+        try:
+            self._send_socket_command(
+                socket,
+                "Runtime.evaluate",
+                {"expression": expression, "returnByValue": True},
+            )
+        except BrowserError as exc:
+            LOGGER.warning("CSS injection application failed: %s", exc)
+
     @staticmethod
     def _log_injection_event(message: dict):
         params = message.get("params") or {}
@@ -536,6 +561,7 @@ class BrowserController:
         url: str,
         preload_delay_seconds: float,
         preload_timeout_seconds: float,
+        injected_css: str | None = None,
     ) -> bool:
         try:
             delay_seconds = float(preload_delay_seconds)
@@ -611,6 +637,8 @@ class BrowserController:
                     timeout_seconds,
                 )
                 return False
+            if injected_css:
+                self._install_current_css(socket, injected_css)
             LOGGER.info(
                 "page load done url=%s result=loaded",
                 url,

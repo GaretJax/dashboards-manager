@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kiosk-agent"
-version = "0.2.0"
+version = "0.2.1"
 description = "Chromium kiosk agent for Kiosk Manager"
 requires-python = ">=3.11"
 dependencies = [

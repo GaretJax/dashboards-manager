@@ -63,13 +63,14 @@ class AgentTelemetry:
         browser: BrowserController,
         status_interval: float = 60,
         display_identity: str | None = None,
+        event_level: str = "DEBUG",
     ):
         self.manager = manager
         self.state = state
         self.browser = browser
         self.status_interval = status_interval
         self.display_identity = display_identity
-        self.events = AgentEventReporter(manager)
+        self.events = AgentEventReporter(manager, minimum_level=event_level)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._pending: dict[int, _PendingScreenshot] = {}

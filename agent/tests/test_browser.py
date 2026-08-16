@@ -141,6 +141,32 @@ def test_content_injections_install_before_navigation(monkeypatch, tmp_path):
     assert "javascript_after" in script
 
 
+def test_current_css_is_applied_to_loaded_document(monkeypatch, tmp_path):
+    controller = BrowserController(
+        browser="chromium",
+        cdp_url="http://127.0.0.1:9222",
+        profile_dir=tmp_path,
+    )
+    calls = []
+    monkeypatch.setattr(
+        BrowserController,
+        "_send_socket_command",
+        lambda _controller, _socket, method, params=None: calls.append(
+            (method, params)
+        ),
+    )
+
+    controller._install_current_css(  # pyright: ignore[reportPrivateUsage]
+        Mock(),
+        ".public-dashboard-footer { display: none !important; }",
+    )
+
+    assert calls[0][0] == "Runtime.evaluate"
+    expression = calls[0][1]["expression"]
+    assert "kiosk-agent-injected-css" in expression
+    assert "public-dashboard-footer" in expression
+
+
 def test_numeric_preload_logs_load_event(caplog, tmp_path):
     controller = BrowserController(
         browser="chromium",
@@ -344,7 +370,7 @@ def test_preload_activates_new_target(monkeypatch, tmp_path):
     monkeypatch.setattr(
         BrowserController,
         "_navigate_and_wait",
-        lambda _controller, _socket, _url, _seconds, _timeout: None,
+        lambda *_args: None,
     )
     monkeypatch.setattr(
         browser_module.websocket,

@@ -39,6 +39,7 @@ class AgentRunner:
         update_interval: float = 21600,
         auto_update: bool = True,
         config_name: str | None = None,
+        event_level: str = "DEBUG",
     ):
         self.manager = manager
         self.browser = browser
@@ -60,6 +61,7 @@ class AgentRunner:
             browser,
             status_interval=status_interval,
             display_identity=display_identity,
+            event_level=event_level,
         )
         self._last_screenshot_at: dict[int, float] = {}
 
