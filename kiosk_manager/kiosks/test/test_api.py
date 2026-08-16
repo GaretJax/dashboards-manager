@@ -47,6 +47,10 @@ def test_agent_wheel_redirect_and_install_script(client, tmp_path):
     assert script_response.status_code == 200
     assert "kiosk-agent bootstrap" in script_response.text
     assert screen.public_token in script_response.text
+    assert script_response.text.index('"${APT[@]}" update') < (
+        script_response.text.index("apt-cache policy chromium")
+    )
+    assert "dpkg-query -W" in script_response.text
     assert script_response["Cache-Control"] == "no-store"
     assert b"".join(wheel_response.streaming_content) == b"fake wheel"
     assert "immutable" in wheel_response["Cache-Control"]

@@ -103,10 +103,6 @@ esac
 if ! command -v apt-get >/dev/null 2>&1; then
     fail "apt-get is required"
 fi
-if ! apt-cache policy chromium 2>/dev/null | grep -q '^  Candidate: [^ (]'; then
-    fail "an apt Chromium package is required; snap Chromium is unsupported"
-fi
-
 if [[ "$(id -u)" -eq 0 ]]; then
     APT=(apt-get)
 else
@@ -114,7 +110,18 @@ else
     APT=(sudo apt-get)
 fi
 "${{APT[@]}}" update
-"${{APT[@]}}" install -y ca-certificates curl python3 chromium labwc wtype cec-utils
+
+APT_PACKAGES=(ca-certificates curl python3 labwc wtype cec-utils)
+if dpkg-query -W -f='${{Status}}' chromium 2>/dev/null | \
+    grep -q 'install ok installed'; then
+    :
+elif ! apt-cache policy chromium 2>/dev/null | \
+    grep -q '^  Candidate: [^ (]'; then
+    fail "an apt Chromium package is required; snap Chromium is unsupported"
+else
+    APT_PACKAGES+=(chromium)
+fi
+"${{APT[@]}}" install -y "${{APT_PACKAGES[@]}}"
 
 if getent group video >/dev/null 2>&1 && [[ "$(id -u)" -eq 0 ]]; then
     usermod -aG video "$TARGET_USER" || true
