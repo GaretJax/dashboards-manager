@@ -72,7 +72,7 @@ class AgentRunner:
             config = self.manager.fetch_config()
             self.telemetry.emit(
                 "config_fetched",
-                "INFO",
+                "DEBUG",
                 "Initial screen configuration fetched",
             )
             self.runtime_state.update(
@@ -345,7 +345,7 @@ class AgentRunner:
             )
             self.telemetry.emit(
                 "page_loaded",
-                "INFO",
+                "DEBUG",
                 "Content loaded successfully",
                 content_id=item.content_id or None,
                 url=item.url,
@@ -443,7 +443,7 @@ class AgentRunner:
             config = self.manager.fetch_config()
             self.telemetry.emit(
                 "config_fetched",
-                "INFO",
+                "DEBUG",
                 "Screen configuration fetched",
             )
             return config

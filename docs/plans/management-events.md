@@ -39,8 +39,8 @@ users get read-only inspection.
 Agent maps internal failures to a small vocabulary:
 
 - `agent_started`, `agent_restarted`, `agent_shutdown` — `INFO`;
-- `config_fetched`, `healthy`, `page_loaded`, `display_power_on`,
-  `display_power_off` — `INFO`;
+- `healthy`, `display_power_on`, `display_power_off` — `INFO`;
+- `config_fetched`, `page_loaded` — `DEBUG`;
 - `loading`, `preloading` — `DEBUG` or `INFO`;
 - `navigation_failed`, `readiness_timeout`, `script_error`, `unexpected_url`,
   `display_control_failed` — `WARNING` or `ERROR` based on recovery result;
