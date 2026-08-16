@@ -5,13 +5,19 @@ from django.contrib import admin, messages
 from django.contrib.admin.utils import display_for_value
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.html import format_html
+from django.utils.html import format_html, format_html_join
+from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 
 from adminutils import ModelAdmin, object_action, options
 
 from ..forms import ContentAdminForm, ScreenAdminForm
-from ..models import PowerState, ScreenContent, ScreenRuntimeStatus
+from ..models import (
+    HealthState,
+    PowerState,
+    ScreenContent,
+    ScreenRuntimeStatus,
+)
 
 
 def _runtime_status(screen):
@@ -160,16 +166,6 @@ class ScreenAdmin(ModelAdmin):
             },
         ),
         (
-            _("Remote state").upper(),
-            {
-                "fields": [
-                    "desired_power_state_display",
-                    "reported_power_state_display",
-                    "pending_agent_command_display",
-                ],
-            },
-        ),
-        (
             _("Status").upper(),
             {
                 "fields": [
@@ -177,9 +173,12 @@ class ScreenAdmin(ModelAdmin):
                     "agent_uptime_display",
                     "last_check_in_display",
                     "health_display",
+                    "pending_agent_command_display",
                     "load_display",
                     "memory_display",
                     "display_info_display",
+                    "desired_power_state_display",
+                    "reported_power_state_display",
                 ],
             },
         ),
@@ -307,7 +306,7 @@ class ScreenAdmin(ModelAdmin):
             % {"reported_at": reported_at},
         )
 
-    @admin.display(description=_("pending agent command"))
+    @admin.display(description=_("Pending commands"))
     @options(desc=_("Unacknowledged command waiting for agent"))
     def pending_agent_command_display(self, screen):
         command = screen.pending_command()
@@ -326,19 +325,19 @@ class ScreenAdmin(ModelAdmin):
             _("by: %(created_by)s") % {"created_by": created_by},
         )
 
-    @admin.display(description=_("agent / Chrome"))
+    @admin.display(description=_("Agent Version"))
     @options(desc=_("Versions reported by kiosk agent"))
     def agent_browser_version_display(self, screen):
         status = _runtime_status(screen)
         if status is None:
             return "-"
         return format_html(
-            "{} / {}",
+            "{} ({})",
             status.agent_version or "-",
             status.browser_version or "-",
         )
 
-    @admin.display(description=_("agent uptime"))
+    @admin.display(description=_("Agent Uptime"))
     @options(desc=_("Agent start time and reported uptime"))
     def agent_uptime_display(self, screen):
         status = _runtime_status(screen)
@@ -349,7 +348,7 @@ class ScreenAdmin(ModelAdmin):
             uptime = (timezone.now() - status.agent_started_at).total_seconds()
         return _status_date(status.agent_started_at, uptime)
 
-    @admin.display(description=_("last check-in"))
+    @admin.display(description=_("Last Check-In"))
     @options(desc=_("Last status report and elapsed time"))
     def last_check_in_display(self, screen):
         status = _runtime_status(screen)
@@ -358,21 +357,49 @@ class ScreenAdmin(ModelAdmin):
         age = (timezone.now() - status.last_check_in).total_seconds()
         return _status_date(status.last_check_in, age)
 
-    @admin.display(description=_("health"))
+    @admin.display(description=_("Health"))
     @options(desc=_("Health state and browser/display errors"))
     def health_display(self, screen):
         status = _runtime_status(screen)
         if status is None:
             return "-"
-        return format_html(
-            "health: {}<br>health error: {}<br>browser: {}<br>display: {}",
-            status.get_health_state_display() or status.health_state or "-",
-            status.health_error or "-",
-            status.browser_error or "-",
-            status.display_error or "-",
+        health_state = status.health_state
+        health_issue = (
+            health_state in {HealthState.DEGRADED, HealthState.ERROR}
+            or bool(status.health_error)
+            or bool(status.browser_error)
+            or bool(status.display_error)
+        )
+        lines = [
+            display_for_value(not health_issue, _("unknown"), boolean=True),
+        ]
+        if status.health_error:
+            lines.append(
+                format_html("{}: {}", _("Health"), status.health_error)
+            )
+        elif health_state in {HealthState.DEGRADED, HealthState.ERROR}:
+            lines.append(
+                format_html(
+                    "{}: {}",
+                    _("Health"),
+                    (
+                        status.get_health_state_display() or health_state
+                    ).title(),
+                )
+            )
+        for label, error in (
+            (_("Browser"), status.browser_error),
+            (_("Display"), status.display_error),
+        ):
+            if error:
+                lines.append(format_html("{}: {}", label, error))
+        return format_html_join(
+            mark_safe("<br>"),
+            "{}",
+            ((line,) for line in lines),
         )
 
-    @admin.display(description=_("load"))
+    @admin.display(description=_("Load"))
     @options(desc=_("One-, five-, and fifteen-minute load"))
     def load_display(self, screen):
         status = _runtime_status(screen)
@@ -385,7 +412,7 @@ class ScreenAdmin(ModelAdmin):
             _format_load(status.load_15m),
         )
 
-    @admin.display(description=_("memory"))
+    @admin.display(description=_("Memory"))
     @options(desc=_("Used and total memory with percentage"))
     def memory_display(self, screen):
         status = _runtime_status(screen)
@@ -403,7 +430,7 @@ class ScreenAdmin(ModelAdmin):
             percent,
         )
 
-    @admin.display(description=_("display"))
+    @admin.display(description=_("Display"))
     @options(desc=_("Display name, resolution, and refresh rate"))
     def display_info_display(self, screen):
         status = _runtime_status(screen)

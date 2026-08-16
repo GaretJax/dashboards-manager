@@ -40,7 +40,6 @@ def test_screen_admin_exposes_rotate_token_detail_action(admin_client):
     assert [title for title, _options in ScreenAdmin.fieldsets] == [
         "SCREEN",
         "POWER SCHEDULE",
-        "REMOTE STATE",
         "STATUS",
         "AGENT INSTALLATION",
         "TIMESTAMPS",
@@ -48,6 +47,13 @@ def test_screen_admin_exposes_rotate_token_detail_action(admin_client):
     fieldsets = dict(ScreenAdmin.fieldsets)
     assert fieldsets["AGENT INSTALLATION"]["classes"] == ["collapse"]
     assert fieldsets["TIMESTAMPS"]["classes"] == ["collapse"]
+    status_fields = fieldsets["STATUS"]["fields"]
+    assert status_fields.index(
+        "pending_agent_command_display"
+    ) > status_fields.index("health_display")
+    assert status_fields.index(
+        "desired_power_state_display"
+    ) > status_fields.index("display_info_display")
 
 
 @pytest.mark.django_db
@@ -145,14 +151,19 @@ def test_screen_admin_status_displays_formatted_runtime_values():
         display_refresh_rate=60,
     )
 
-    assert "0.2.5 / Chrome/149.0.0.0" in str(
+    assert "0.2.5 (Chrome/149.0.0.0)" in str(
         ScreenAdmin.agent_browser_version_display(None, screen)
     )
     assert "1d 2h 3m 4s" in str(ScreenAdmin.agent_uptime_display(None, screen))
     assert "5m 2s" in str(ScreenAdmin.last_check_in_display(None, screen))
     health = str(ScreenAdmin.health_display(None, screen))
-    assert all(value in health for value in ("degraded", "CEC unavailable"))
-    assert all(value in health for value in ("page timeout", "HDMI missing"))
+    assert "Health: CEC unavailable" in health
+    assert all(
+        value in health
+        for value in ("Browser: page timeout", "Display: HDMI missing")
+    )
+    assert "Health Error" not in health
+    assert health.count("icon-no.svg") == 1
     assert "1m: 0.12 · 5m: 0.34 · 15m: 0.56" in str(
         ScreenAdmin.load_display(None, screen)
     )
@@ -162,6 +173,19 @@ def test_screen_admin_status_displays_formatted_runtime_values():
     assert "HDMI-A-1 · 1920 x 1080 @ 60.0 Hz" in str(
         ScreenAdmin.display_info_display(None, screen)
     )
+
+
+@pytest.mark.django_db
+def test_screen_admin_healthy_status_only_shows_overall_icon():
+    screen = Screen.objects.create(name="Lobby")
+    ScreenRuntimeStatus.objects.create(screen=screen, health_state="healthy")
+
+    health = str(ScreenAdmin.health_display(None, screen))
+
+    assert "icon-yes.svg" in health
+    assert "Health" not in health
+    assert "Browser" not in health
+    assert "Display" not in health
 
 
 def test_screen_admin_schedule_widget_includes_time_control():
