@@ -1,6 +1,8 @@
-from datetime import timedelta
+from datetime import date, datetime, timedelta
 
+from django.conf import settings
 from django.contrib import admin
+from django.contrib.admin.utils import display_for_value
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
@@ -176,11 +178,31 @@ def test_event_admin_uses_autocomplete_filters():
     assert filter_parameters == ["screen", "content"]
 
 
+@pytest.mark.django_db
+def test_event_admin_changelist_renders_autocomplete_filters(admin_client):
+    response = admin_client.get(reverse("admin:kiosks_event_changelist"))
+
+    assert response.status_code == 200
+    assert 'id="id-screen-dal-filter"' in response.text
+    assert 'id="id-content-dal-filter"' in response.text
+
+
 def test_event_admin_colors_levels():
     level = str(EventAdmin.level_display(None, Event(level="WARNING")))
 
     assert "Warning" in level
     assert "#d97706" in level
+
+
+def test_admin_uses_iso_date_formats():
+    value = datetime(2026, 1, 2, 3, 4, 5)
+
+    assert settings.DATE_FORMAT == "Y-m-d"
+    assert settings.DATETIME_FORMAT == "Y-m-d H:i:s"
+    assert settings.SHORT_DATE_FORMAT == "Y-m-d"
+    assert settings.SHORT_DATETIME_FORMAT == "Y-m-d H:i:s"
+    assert display_for_value(value, "unknown") == "2026-01-02 03:04:05"
+    assert display_for_value(date(2026, 1, 2), "unknown") == "2026-01-02"
 
 
 def test_event_inline_is_readonly():

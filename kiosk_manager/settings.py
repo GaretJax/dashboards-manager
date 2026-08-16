@@ -56,6 +56,7 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 INSTALLED_APPS = [
+    "admin_auto_filters",
     "adminutils",
     "django.contrib.admin",
     "django.contrib.auth",
@@ -124,6 +125,11 @@ LANGUAGE_CODE = "en-us"
 TIME_ZONE = os.environ.get("TIME_ZONE", "America/New_York")
 USE_I18N = True
 USE_TZ = True
+FORMAT_MODULE_PATH = ["kiosk_manager.formats"]
+DATE_FORMAT = "Y-m-d"
+DATETIME_FORMAT = "Y-m-d H:i:s"
+SHORT_DATE_FORMAT = DATE_FORMAT
+SHORT_DATETIME_FORMAT = DATETIME_FORMAT
 
 DEFAULT_STORAGE_DSN = os.environ.get("DEFAULT_STORAGE_DSN")
 MEDIA_ROOT = BASE_DIR / "media"
