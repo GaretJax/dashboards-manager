@@ -18,9 +18,9 @@ def config_path(config_ref: str | Path | None = None) -> Path:
     if config_ref is None:
         return get_paths().config / f"{DEFAULT_CONFIG_NAME}.toml"
     raw = Path(config_ref).expanduser()
-    if raw.is_absolute() or raw.parent != Path("."):
+    if raw.is_absolute() or raw.parent != Path(".") or raw.suffix == ".toml":
         return raw
-    name = raw.stem if raw.suffix == ".toml" else raw.name
+    name = raw.name
     validate_config_name(name)
     return get_paths().config / f"{name}.toml"
 
@@ -54,9 +54,12 @@ def load_config(config_ref: str | Path) -> dict:
         "poll_interval",
         "status_interval",
         "screenshot_interval",
+        "update_interval",
+        "auto_update",
         "log_level",
         "cec_port",
         "display",
+        "display_identity",
         "wayland_display",
         "runtime_dir",
     }
@@ -147,10 +150,8 @@ def merge_config(
     return values
 
 
-def dump_config(name: str, values: dict) -> Path:
-    validate_config_name(name)
-    # nosemgrep: python-path-traversal
-    path = get_paths().config / f"{name}.toml"
+def dump_config(config_ref: str | Path | None, values: dict) -> Path:
+    path = config_path(config_ref)
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = []
     for key in sorted(values):

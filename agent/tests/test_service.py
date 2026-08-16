@@ -3,6 +3,7 @@ from unittest.mock import Mock
 from kiosk_agent.service import (
     render_unit,
     run_journalctl,
+    service_instance_name,
     stable_install_error,
 )
 
@@ -24,6 +25,14 @@ def test_user_template_targets_default_target_and_graphical_session():
     assert "kiosk-agent@.service" not in unit
 
 
+def test_full_config_path_is_embedded_and_names_service_instance():
+    config_path = "/home/kiosk/.config/kiosk-agent/lobby.toml"
+    unit = render_unit(scope="user", config_ref=config_path)
+
+    assert f"--config {config_path}" in unit
+    assert service_instance_name(config_path) == "kiosk-agent@lobby.service"
+
+
 def test_system_template_has_user_and_graphical_target():
     unit = render_unit(scope="system", user="kiosk")
 
@@ -33,7 +42,7 @@ def test_system_template_has_user_and_graphical_target():
     assert "WantedBy=graphical.target" in unit
 
 
-def test_user_journal_logs_filter_named_instance(monkeypatch):
+def test_user_journal_logs_filter_named_instance(monkeypatch, tmp_path):
     run = Mock()
     monkeypatch.setattr(
         "kiosk_agent.service.shutil.which", lambda _: "/bin/journalctl"
@@ -41,7 +50,12 @@ def test_user_journal_logs_filter_named_instance(monkeypatch):
     monkeypatch.setattr("kiosk_agent.service.subprocess.run", run)
     monkeypatch.setenv("SUDO_UID", "1000")
 
-    run_journalctl("user", follow=True, lines=25, config_name="lobby")
+    run_journalctl(
+        "user",
+        follow=True,
+        lines=25,
+        config_name=tmp_path / "lobby.toml",
+    )
 
     assert run.call_args.args[0] == [
         "journalctl",

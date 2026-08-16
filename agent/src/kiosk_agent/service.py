@@ -5,14 +5,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .config import validate_config_name
+from .config import config_path, validate_config_name
 from .display import runtime_directory
 from .paths import APP_NAME, ephemeral_runtime_reason
 
 SERVICE_TEMPLATE_NAME = "kiosk-agent@.service"
 
 
-def service_instance_name(config_name: str) -> str:
+def service_instance_name(config_ref: str | Path) -> str:
+    config_name = config_path(config_ref).stem
     validate_config_name(config_name)
     return f"kiosk-agent@{config_name}.service"
 
@@ -21,7 +22,21 @@ def _user_unit_directory() -> Path:
     return Path.home() / ".config" / "systemd" / "user"
 
 
-def unit_path(scope: str, config_name: str | None = None) -> Path:
+def installed_service_instances(scope: str) -> list[str]:
+    if scope == "user":
+        directory = _user_unit_directory() / "default.target.wants"
+    elif scope == "system":
+        directory = Path("/etc/systemd/system/graphical.target.wants")
+    else:
+        raise ValueError(f"unsupported systemd scope: {scope}")
+    return sorted(
+        path.name
+        for path in directory.glob("kiosk-agent@*.service")
+        if path.name != SERVICE_TEMPLATE_NAME
+    )
+
+
+def unit_path(scope: str, config_name: str | Path | None = None) -> Path:
     if scope == "user":
         directory = _user_unit_directory()
     elif scope == "system":
@@ -61,7 +76,7 @@ def run_journalctl(
     scope: str,
     follow: bool = False,
     lines: int = 100,
-    config_name: str | None = None,
+    config_name: str | Path | None = None,
 ):
     if shutil.which("journalctl") is None:
         raise RuntimeError("journalctl is not installed")
@@ -87,14 +102,17 @@ def run_journalctl(
     return subprocess.run(command, check=False)  # noqa: S603
 
 
-def _run_command() -> list[str]:
+def _run_command(config_ref: str | Path | None = None) -> list[str]:
+    config_argument = (
+        "%i" if config_ref is None else str(config_path(config_ref))
+    )
     return [
         sys.executable,
         "-m",
         "kiosk_agent",
         "run",
         "--config",
-        "%i",
+        config_argument,
     ]
 
 
@@ -114,6 +132,7 @@ def render_unit(
     display: str | None = None,
     wayland_display: str | None = None,
     runtime_dir: str | None = None,
+    config_ref: str | Path | None = None,
 ) -> str:
     del manager, screen, browser, cdp_url, poll_interval, profile_dir
     del ephemeral_profile, launch_browser, log_level
@@ -140,7 +159,7 @@ def render_unit(
         "",
         "[Service]",
         "Type=simple",
-        f"ExecStart={shlex.join(_run_command())}",
+        f"ExecStart={shlex.join(_run_command(config_ref))}",
         "Restart=always",
         "RestartSec=5",
         "Environment=PYTHONUNBUFFERED=1",
@@ -166,13 +185,13 @@ def install_unit(
     scope: str,
     enable: bool,
     start: bool,
-    config_name: str,
+    config_ref: str | Path,
 ):
     path = unit_path(scope)
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists() or path.read_text(encoding="utf-8") != unit:
         path.write_text(unit, encoding="utf-8")
-    instance = service_instance_name(config_name)
+    instance = service_instance_name(config_ref)
     run_systemctl(scope, "daemon-reload")
     if enable:
         run_systemctl(scope, "enable", instance)
@@ -181,14 +200,14 @@ def install_unit(
     return path
 
 
-def uninstall_unit(scope: str, config_name: str | None = None):
+def uninstall_unit(scope: str, config_ref: str | Path | None = None):
     instance = (
-        service_instance_name(config_name)
-        if config_name is not None
+        service_instance_name(config_ref)
+        if config_ref is not None
         else SERVICE_TEMPLATE_NAME
     )
     run_systemctl(scope, "disable", "--now", instance, check=False)
-    if config_name is None:
+    if config_ref is None:
         path = unit_path(scope)
         if path.exists():
             path.unlink()

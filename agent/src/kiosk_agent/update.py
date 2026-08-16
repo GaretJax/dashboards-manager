@@ -136,14 +136,14 @@ def install_wheel(path: Path, expected: AgentUpdate):
         )
 
 
-def refresh_service(config_name: str):
+def refresh_service(config_name: str | Path):
     executable = _tool_executable("kiosk-agent")
     command = (
         [executable, "service", "install"]
         if executable is not None
         else [sys.executable, "-m", "kiosk_agent", "service", "install"]
     )
-    command.extend(["--config", config_name, "--no-start"])
+    command.extend(["--config", str(config_name), "--no-start"])
     result = subprocess.run(  # noqa: S603
         command,
         capture_output=True,

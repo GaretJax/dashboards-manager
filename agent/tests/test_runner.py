@@ -20,9 +20,9 @@ def _item(url, duration, preload_delay=0):
 def test_new_agent_update_installs_and_requests_service_restart(monkeypatch):
     manager = Mock()
     manager.check_agent_update.return_value = AgentUpdate(
-        "kiosk_agent-0.1.2-py3-none-any.whl",
-        "https://manager.example/downloads/kiosk_agent-0.1.2-py3-none-any.whl",
-        "0.1.2",
+        "kiosk_agent-0.3.0-py3-none-any.whl",
+        "https://manager.example/downloads/kiosk_agent-0.3.0-py3-none-any.whl",
+        "0.3.0",
     )
     manager.download_agent_wheel.return_value = b"wheel"
     runner = AgentRunner(manager, Mock(), config_name="kiosk")

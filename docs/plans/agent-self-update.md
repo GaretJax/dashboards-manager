@@ -137,7 +137,7 @@ Extend config/CLI/service interfaces:
 
 - `update_interval` default `21600` seconds;
 - `auto_update` default `true`;
-- `kiosk-agent update --check`/diagnostic command for manual inspection;
+- `kiosk-agent upgrade --check`/diagnostic command for manual inspection;
 - `service refresh` or equivalent that re-renders the current unit using the
   installed interpreter without starting a duplicate process;
 - machine-readable version output for post-install verification.

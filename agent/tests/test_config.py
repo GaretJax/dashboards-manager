@@ -23,6 +23,9 @@ def test_dump_and_load_config_is_idempotent(monkeypatch, tmp_path):
         "cec_port": "/dev/cec0",
         "poll_interval": 15.0,
         "launch_browser": True,
+        "update_interval": 21600.0,
+        "auto_update": True,
+        "display_identity": "HDMI-A-1",
     }
 
     path = config.dump_config("lobby", values)
@@ -32,6 +35,20 @@ def test_dump_and_load_config_is_idempotent(monkeypatch, tmp_path):
     assert path == tmp_path / "config/lobby.toml"
     assert path.read_text(encoding="utf-8") == first
     assert config.load_config("lobby") == values
+
+
+def test_dump_and_load_config_accepts_full_path(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "get_paths", lambda: _paths(tmp_path))
+    path = tmp_path / "custom" / "lobby.toml"
+    values = {
+        "manager": "https://manager.example",
+        "screen": "TOKEN",
+    }
+
+    written = config.dump_config(path, values)
+
+    assert written == path
+    assert config.load_config(path) == values
 
 
 def test_merge_config_applies_cli_overrides(monkeypatch, tmp_path):

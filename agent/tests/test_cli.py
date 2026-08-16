@@ -8,13 +8,14 @@ from kiosk_agent import config as config_module
 from kiosk_agent.cli import main
 from kiosk_agent.diagnostics import CheckResult
 from kiosk_agent.paths import AgentPaths
+from kiosk_agent.update import AgentUpdate
 
 
 def test_module_cli_exposes_version():
     result = CliRunner().invoke(main, ["--version"])
 
     assert result.exit_code == 0
-    assert "0.1.1" in result.output
+    assert "0.2.0" in result.output
 
 
 def test_httpx_request_logs_are_demoted_to_debug():
@@ -88,7 +89,7 @@ def test_service_install_writes_named_config_and_template(
             "service",
             "install",
             "--config",
-            "left",
+            str(tmp_path / "config" / "left.toml"),
             "--manager",
             "https://manager.example",
             "--screen",
@@ -99,9 +100,100 @@ def test_service_install_writes_named_config_and_template(
     )
 
     assert result.exit_code == 0, result.output
-    assert (tmp_path / "config/left.toml").exists()
+    config_path = tmp_path / "config" / "left.toml"
+    assert config_path.exists()
     install.assert_called_once()
-    assert install.call_args.args[-1] == "left"
+    assert install.call_args.args[-1] == config_path
+
+
+def test_upgrade_installs_wheel_without_screen_and_restarts_services(
+    monkeypatch,
+):
+    client = Mock()
+    client.check_agent_update.return_value = AgentUpdate(
+        "kiosk_agent-0.3.0-py3-none-any.whl",
+        "https://manager.example/downloads/kiosk_agent-0.3.0-py3-none-any.whl",
+        "0.3.0",
+    )
+    client.download_agent_wheel.return_value = b"wheel"
+    monkeypatch.setattr(cli, "ManagerClient", Mock(return_value=client))
+    monkeypatch.setattr(cli, "verify_wheel", Mock())
+    monkeypatch.setattr(cli, "install_wheel", Mock())
+    monkeypatch.setattr(
+        cli,
+        "installed_service_instances",
+        lambda _scope: ["kiosk-agent@lobby.service"],
+    )
+    restart = Mock()
+    monkeypatch.setattr(cli, "run_systemctl", restart)
+
+    result = CliRunner().invoke(
+        main,
+        ["upgrade", "--manager", "https://manager.example"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "upgraded=0.3.0" in result.output
+    cli.ManagerClient.assert_called_once_with("https://manager.example")
+    restart.assert_called_once_with(
+        "user", "restart", "kiosk-agent@lobby.service"
+    )
+
+
+def test_upgrade_check_does_not_install(monkeypatch):
+    client = Mock()
+    client.check_agent_update.return_value = AgentUpdate(
+        "kiosk_agent-0.3.0-py3-none-any.whl",
+        "https://manager.example/downloads/kiosk_agent-0.3.0-py3-none-any.whl",
+        "0.3.0",
+    )
+    monkeypatch.setattr(cli, "ManagerClient", Mock(return_value=client))
+    install = Mock()
+    monkeypatch.setattr(cli, "install_wheel", install)
+
+    result = CliRunner().invoke(
+        main,
+        ["upgrade", "--manager", "https://manager.example", "--check"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "state=available" in result.output
+    client.download_agent_wheel.assert_not_called()
+    install.assert_not_called()
+
+
+def test_upgrade_can_skip_service_restart(monkeypatch):
+    client = Mock()
+    client.check_agent_update.return_value = AgentUpdate(
+        "kiosk_agent-0.3.0-py3-none-any.whl",
+        "https://manager.example/downloads/kiosk_agent-0.3.0-py3-none-any.whl",
+        "0.3.0",
+    )
+    client.download_agent_wheel.return_value = b"wheel"
+    monkeypatch.setattr(cli, "ManagerClient", Mock(return_value=client))
+    monkeypatch.setattr(cli, "verify_wheel", Mock())
+    monkeypatch.setattr(cli, "install_wheel", Mock())
+    monkeypatch.setattr(
+        cli,
+        "installed_service_instances",
+        lambda _scope: ["kiosk-agent@lobby.service"],
+    )
+    restart = Mock()
+    monkeypatch.setattr(cli, "run_systemctl", restart)
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "upgrade",
+            "--manager",
+            "https://manager.example",
+            "--no-restart",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "services not restarted" in result.output
+    restart.assert_not_called()
 
 
 def test_bootstrap_non_interactive_writes_config_and_service(
@@ -138,7 +230,9 @@ def test_bootstrap_non_interactive_writes_config_and_service(
         lambda **_kwargs: [CheckResult("bootstrap", "ok", "ready")],
     )
 
-    result = CliRunner().invoke(
+    config_file = tmp_path / "config/kiosk.toml"
+    runner = CliRunner()
+    result = runner.invoke(
         main,
         [
             "bootstrap",
@@ -146,12 +240,28 @@ def test_bootstrap_non_interactive_writes_config_and_service(
             "https://manager.example",
             "--screen",
             "TOKEN",
+            "--config",
+            str(config_file),
+            "--non-interactive",
+        ],
+    )
+    retry = runner.invoke(
+        main,
+        [
+            "bootstrap",
+            "--manager",
+            "https://manager.example",
+            "--screen",
+            "TOKEN",
+            "--config",
+            str(config_file),
             "--non-interactive",
         ],
     )
 
     assert result.exit_code == 0, result.output
-    config = (tmp_path / "config/kiosk.toml").read_text()
+    assert retry.exit_code == 0, retry.output
+    config = config_file.read_text()
     assert 'manager = "https://manager.example"' in config
     assert 'screen = "TOKEN"' in config
     assert 'wayland_display = "wayland-0"' in config

@@ -112,7 +112,8 @@ kiosk-agent service install \
 - `bootstrap` interactively configures display/CEC, writes config, installs the
   user service, and validates startup. Use `--non-interactive` only with
   unambiguous host defaults.
-- `update --check` checks stable Manager wheel redirect for a newer agent.
+- `upgrade` checks and installs the stable Manager wheel, then restarts
+  installed agent services by default; use `--no-restart` to defer restart.
 - `cec list` and `cec detect` inspect HDMI-CEC adapters.
 - `doctor` checks runtime, display, browser, CEC, CDP, systemd, and API readiness.
 - `service install`, `uninstall`, `show-unit`, `status`, `start`, `stop`,
@@ -158,7 +159,9 @@ reported to Manager.
 Pass CEC adapter path with `--cec-port`:
 
 ```shell
-kiosk-agent run --config lobby --cec-port /dev/cec0
+kiosk-agent run \
+  --config "$HOME/.config/kiosk-agent/lobby.toml" \
+  --cec-port /dev/cec0
 kiosk-agent cec list
 kiosk-agent cec detect
 kiosk-agent doctor --cec-port /dev/cec0
@@ -182,8 +185,9 @@ WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 \
   --cec-port /dev/cec0
 ```
 
-TOML config files live in platformdirs config directory, normally
-`~/.config/kiosk-agent/`. Example `lobby.toml`:
+TOML config files default to the platformdirs config directory, normally
+`~/.config/kiosk-agent/`, but commands accept full paths. Example
+`lobby.toml`:
 
 ```toml
 manager = "https://manager.example"
@@ -197,19 +201,33 @@ wayland_display = "wayland-0"
 runtime_dir = "/run/user/1000"
 ```
 
-Run with `kiosk-agent run --config lobby`; command-line options override TOML.
-
-`service install` writes named TOML config and installs one idempotent template
-unit. Multiple monitors can run separate instances:
+Run with a full config path; command-line options override TOML.
 
 ```shell
-kiosk-agent service install --config left \
-  --manager https://manager.example --screen LEFT_TOKEN --cec-port /dev/cec0
-kiosk-agent service install --config right \
-  --manager https://manager.example --screen RIGHT_TOKEN --cec-port /dev/cec1
-kiosk-agent service status --config left
-kiosk-agent service logs --config right --lines 200
+kiosk-agent run --config "$HOME/.config/kiosk-agent/lobby.toml"
+kiosk-agent upgrade --manager https://manager.example
 ```
+
+`upgrade` downloads and installs newer agent wheels through uv, then restarts
+installed agent services. Use `--no-restart` to defer service restart.
+
+`bootstrap` and `service install` are idempotent: rerunning them updates the
+same config and service instance. Multiple monitors can run separate instances:
+
+```shell
+kiosk-agent service install \
+  --config "$HOME/.config/kiosk-agent/left.toml" \
+  --manager https://manager.example --screen LEFT_TOKEN --cec-port /dev/cec0
+kiosk-agent service install \
+  --config "$HOME/.config/kiosk-agent/right.toml" \
+  --manager https://manager.example --screen RIGHT_TOKEN --cec-port /dev/cec1
+kiosk-agent service status --config "$HOME/.config/kiosk-agent/left.toml"
+kiosk-agent service logs --config "$HOME/.config/kiosk-agent/right.toml" --lines 200
+```
+
+If bootstrap fails, inspect logs with `kiosk-agent service logs --config
+/path/to/config.toml --scope user --lines 200`, then rerun bootstrap with the
+same full config path and `--force`.
 
 This installs `kiosk-agent@.service` and starts
 `kiosk-agent@left.service` / `kiosk-agent@right.service`. `service install

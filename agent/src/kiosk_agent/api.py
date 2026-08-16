@@ -134,10 +134,13 @@ def _parse_pending_command(value) -> PendingCommand | None:
 
 class ManagerClient:
     def __init__(
-        self, manager_url: str, screen_token: str, timeout: float = 5
+        self,
+        manager_url: str,
+        screen_token: str | None = None,
+        timeout: float = 5,
     ):
         self.manager_url = manager_url.rstrip("/")
-        self.screen_token = screen_token.strip()
+        self.screen_token = (screen_token or "").strip()
         self._client = httpx.Client(timeout=timeout)
         self._lock = threading.RLock()
 

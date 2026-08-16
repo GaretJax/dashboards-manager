@@ -1,10 +1,13 @@
+import shlex
 from pathlib import Path
 from urllib.parse import quote
 
 from django.conf import settings
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, render
+from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils.text import slugify
 
 from .agent_package import agent_wheel_path
 from .models import Content, Screen
@@ -60,99 +63,6 @@ def _manager_base_url(request):
     return request.build_absolute_uri(path).rstrip("/")
 
 
-def _render_install_script(manager_url, screen_token, wheel_url):
-    import shlex
-
-    return f"""#!/usr/bin/env bash
-set -Eeuo pipefail
-
-MANAGER_URL={shlex.quote(manager_url)}
-SCREEN_TOKEN={shlex.quote(screen_token)}
-WHEEL_URL={shlex.quote(wheel_url)}
-
-fail() {{
-    printf 'kiosk-agent install failed: %s\\n' "$1" >&2
-    exit 1
-}}
-
-if [[ -z "${{BASH_VERSION:-}}" ]]; then
-    fail "run this installer with bash"
-fi
-
-if [[ "$(id -u)" -eq 0 ]]; then
-    TARGET_USER="${{KIOSK_AGENT_USER:-${{SUDO_USER:-}}}}"
-    [[ -n "$TARGET_USER" ]] || fail "set KIOSK_AGENT_USER when running as root"
-else
-    TARGET_USER="${{KIOSK_AGENT_USER:-${{USER:-}}}}"
-fi
-
-id "$TARGET_USER" >/dev/null 2>&1 || fail "unknown target user: $TARGET_USER"
-TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
-[[ -n "$TARGET_HOME" && -d "$TARGET_HOME" ]] || fail "target home unavailable"
-
-if [[ ! -r /etc/os-release ]]; then
-    fail "/etc/os-release is unavailable"
-fi
-# shellcheck disable=SC1091
-. /etc/os-release
-case " ${{ID:-}} ${{ID_LIKE:-}} " in
-    *" debian "*|*" ubuntu "*|*" linuxmint "*) ;;
-    *) fail "only Debian-family systems are supported" ;;
-esac
-
-if ! command -v apt-get >/dev/null 2>&1; then
-    fail "apt-get is required"
-fi
-if [[ "$(id -u)" -eq 0 ]]; then
-    APT=(apt-get)
-else
-    command -v sudo >/dev/null 2>&1 || fail "sudo is required"
-    APT=(sudo apt-get)
-fi
-"${{APT[@]}}" update
-
-APT_PACKAGES=(ca-certificates curl python3 labwc wtype cec-utils)
-if dpkg-query -W -f='${{Status}}' chromium 2>/dev/null | \
-    grep -q 'install ok installed'; then
-    :
-elif ! apt-cache policy chromium 2>/dev/null | \
-    grep -q '^  Candidate: [^ (]'; then
-    fail "an apt Chromium package is required; snap Chromium is unsupported"
-else
-    APT_PACKAGES+=(chromium)
-fi
-"${{APT[@]}}" install -y "${{APT_PACKAGES[@]}}"
-
-if getent group video >/dev/null 2>&1 && [[ "$(id -u)" -eq 0 ]]; then
-    usermod -aG video "$TARGET_USER" || true
-fi
-
-run_target() {{
-    if [[ "$(id -u)" -eq 0 ]]; then
-        runuser -u "$TARGET_USER" -- env HOME="$TARGET_HOME" \\
-            PATH="$TARGET_HOME/.local/bin:/usr/local/bin:/usr/bin:/bin" "$@"
-    else
-        env HOME="$TARGET_HOME" \\
-            PATH="$TARGET_HOME/.local/bin:/usr/local/bin:/usr/bin:/bin" "$@"
-    fi
-}}
-
-if ! run_target bash -lc 'command -v uv' >/dev/null 2>&1; then
-    run_target bash -c 'curl --fail --silent --show-error --location \\
-        https://astral.sh/uv/install.sh | sh'
-fi
-run_target uv tool install --force "$WHEEL_URL"
-run_target kiosk-agent --version >/dev/null
-
-BOOTSTRAP=(kiosk-agent bootstrap --manager "$MANAGER_URL" --screen "$SCREEN_TOKEN")
-if [[ -r /dev/tty ]]; then
-    run_target "${{BOOTSTRAP[@]}}" < /dev/tty
-else
-    run_target "${{BOOTSTRAP[@]}}" --non-interactive
-fi
-"""
-
-
 def agent_install(request):
     token = request.GET.get("screen", "")
     screen = get_object_or_404(
@@ -167,10 +77,16 @@ def agent_install(request):
             kwargs={"filename": wheel.name},
         )
     )
-    script = _render_install_script(
-        _manager_base_url(request),
-        screen.public_token,
-        wheel_url,
+    default_config_name = slugify(screen.name) or f"screen-{screen.pk}"
+    script = render_to_string(
+        "kiosks/install.sh",
+        {
+            "manager_url": shlex.quote(_manager_base_url(request)),
+            "screen_token": shlex.quote(screen.public_token),
+            "wheel_url": shlex.quote(wheel_url),
+            "install_url": shlex.quote(request.build_absolute_uri()),
+            "default_config_name": shlex.quote(default_config_name),
+        },
     )
     response = HttpResponse(script, content_type="text/x-shellscript")
     response["Cache-Control"] = "no-store"

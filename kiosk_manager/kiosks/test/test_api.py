@@ -28,7 +28,7 @@ def _html_file():
 def test_agent_wheel_redirect_and_install_script(client, tmp_path):
     wheel = tmp_path / "kiosk_agent-0.1.2-py3-none-any.whl"
     wheel.write_bytes(b"fake wheel")
-    screen = Screen.objects.create(name="Lobby")
+    screen = Screen.objects.create(name="Lobby Dashboard")
 
     with override_settings(KIOSK_AGENT_WHEEL_DIR=tmp_path):
         redirect_response = client.head("/downloads/kiosk-agent.whl")
@@ -47,6 +47,12 @@ def test_agent_wheel_redirect_and_install_script(client, tmp_path):
     assert script_response.status_code == 200
     assert "kiosk-agent bootstrap" in script_response.text
     assert screen.public_token in script_response.text
+    assert "DEFAULT_CONFIG_NAME=lobby-dashboard" in script_response.text
+    assert "Config name [${DEFAULT_CONFIG_NAME}]" in script_response.text
+    assert 'run_command "${APT[@]}" update' in script_response.text
+    assert 'uv tool install --force "$WHEEL_URL"' in script_response.text
+    assert "service logs" in script_response.text
+    assert '--config "$CONFIG_PATH"' in script_response.text
     assert script_response.text.index('"${APT[@]}" update') < (
         script_response.text.index("apt-cache policy chromium")
     )

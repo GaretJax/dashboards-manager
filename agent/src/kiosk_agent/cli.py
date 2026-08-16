@@ -1,3 +1,4 @@
+import contextlib
 import json
 import logging
 import os
@@ -34,6 +35,7 @@ from .runner import AgentRestartRequested, AgentRunner
 from .service import (
     current_display_environment,
     install_unit,
+    installed_service_instances,
     render_unit,
     run_journalctl,
     run_systemctl,
@@ -41,7 +43,13 @@ from .service import (
     stable_install_error,
     uninstall_unit,
 )
-from .update import UpdateError, compare_versions
+from .update import (
+    UpdateError,
+    compare_versions,
+    install_wheel,
+    refresh_service,
+    verify_wheel,
+)
 from .wayland import (
     WaylandSetupError,
     default_labwc_config_path,
@@ -87,7 +95,12 @@ def main():
 
 
 @main.command()
-@click.option("--config", "config_ref", help="TOML config name or path.")
+@click.option(
+    "--config",
+    "config_ref",
+    type=click.Path(path_type=Path),
+    help="Full path to TOML config file.",
+)
 @click.option("--manager", help="Kiosk Manager base URL.")
 @click.option("--screen", "screen_token", help="Screen token.")
 @click.option("--browser", default=None, help="Chromium executable name/path.")
@@ -377,7 +390,14 @@ def _bootstrap_cec(cec_port, non_interactive):
 @main.command()
 @click.option("--manager", required=True, help="Kiosk Manager base URL.")
 @click.option("--screen", "screen_token", required=True, help="Screen token.")
-@click.option("--config", "config_name", default="kiosk", show_default=True)
+@click.option(
+    "--config",
+    "config_name",
+    type=click.Path(path_type=Path),
+    default="kiosk",
+    show_default=True,
+    help="Full path to TOML config file.",
+)
 @click.option("--browser", default=None, help="Chromium executable name/path.")
 @click.option("--cec-port", default=None, help="HDMI-CEC device path.")
 @click.option("--display")
@@ -408,21 +428,11 @@ def bootstrap(
     force,
 ):
     """Configure, install, start, and validate a kiosk agent service."""
+    del force
     try:
         config_file = config_path(config_name)
     except ConfigError as exc:
         raise click.ClickException(str(exc)) from exc
-    if (
-        config_file.exists()
-        and not force
-        and (
-            non_interactive
-            or not click.confirm(
-                f"Replace existing config {config_file}?", default=False
-            )
-        )
-    ):
-        raise click.ClickException("existing config was not replaced")
 
     display_values = _bootstrap_display(
         display=display,
@@ -457,15 +467,16 @@ def bootstrap(
         "screenshot_interval": screenshot_interval,
     }
     try:
-        values = merge_config(config_name, overrides, allow_missing=True)
-        config_file = dump_config(config_name, values)
+        values = merge_config(config_file, overrides, allow_missing=True)
+        config_file = dump_config(config_file, values)
         unit = render_unit(
             scope="user",
             display=values["display"],
             wayland_display=values["wayland_display"],
             runtime_dir=values["runtime_dir"],
+            config_ref=config_file,
         )
-        unit_file = install_unit(unit, "user", True, True, config_name)
+        unit_file = install_unit(unit, "user", True, True, config_file)
     except (ConfigError, OSError, RuntimeError) as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -491,47 +502,92 @@ def bootstrap(
     click.echo(f"Installed {unit_file}")
 
 
-@main.command(name="update")
-@click.option("--config", "config_ref", help="TOML config name or path.")
+@main.command(name="upgrade")
+@click.option(
+    "--config",
+    "config_ref",
+    type=click.Path(path_type=Path),
+    help="Full path to TOML config file.",
+)
 @click.option("--manager", help="Kiosk Manager base URL.")
-@click.option("--screen", "screen_token", help="Screen token.")
-@click.option("--check", is_flag=True, help="Check without installing.")
-def update_command(config_ref, manager, screen_token, check):
-    """Check remote agent wheel version."""
+@click.option(
+    "--restart/--no-restart",
+    default=True,
+    show_default=True,
+    help="Restart installed agent services after upgrade.",
+)
+@click.option(
+    "--check", is_flag=True, help="Only check for an available upgrade."
+)
+def upgrade_command(config_ref, manager, restart, check):
+    """Install latest agent wheel and optionally restart its service."""
     if config_ref:
         try:
-            values = merge_config(
-                config_ref,
-                {"manager": manager, "screen": screen_token},
-            )
+            values = merge_config(config_ref, {"manager": manager})
         except ConfigError as exc:
             raise click.ClickException(str(exc)) from exc
         manager = values["manager"]
-        screen_token = values["screen"]
-    elif not manager or not screen_token:
-        raise click.UsageError(
-            "--manager and --screen are required without --config"
-        )
-    client = ManagerClient(manager, screen_token)
+    elif not manager:
+        raise click.UsageError("--manager is required without --config")
+
+    client = ManagerClient(manager)
     try:
         remote = client.check_agent_update()
-    except ManagerError as exc:
+        comparison = compare_versions(__version__, remote.version)
+        click.echo(
+            f"current={__version__} remote={remote.version} "
+            f"state={'available' if comparison > 0 else 'current'}"
+        )
+        click.echo(remote.url)
+        if comparison <= 0 or check:
+            return
+        wheel_bytes = client.download_agent_wheel(remote)
+    except (ManagerError, UpdateError) as exc:
         raise click.ClickException(str(exc)) from exc
     finally:
         client.close()
+
+    wheel_path = None
     try:
-        comparison = compare_versions(__version__, remote.version)
-    except UpdateError as exc:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            prefix="kiosk-agent-upgrade-",
+            suffix=".whl",
+            delete=False,
+        ) as handle:
+            handle.write(wheel_bytes)
+            wheel_path = Path(handle.name)
+        verify_wheel(wheel_path, remote)
+        install_wheel(wheel_path, remote)
+
+        installed_services = installed_service_instances("user")
+        if config_ref:
+            config_service = service_instance_name(config_ref)
+            if config_service in installed_services and restart:
+                refresh_service(config_ref)
+        if restart:
+            for service_name in installed_services:
+                run_systemctl("user", "restart", service_name)
+        click.echo(f"upgraded={remote.version}")
+        if installed_services and not restart:
+            click.echo("services not restarted (--no-restart)")
+        elif installed_services:
+            click.echo(f"restarted={len(installed_services)}")
+    except (OSError, RuntimeError, UpdateError) as exc:
         raise click.ClickException(str(exc)) from exc
-    state = "available" if comparison < 0 else "current"
-    click.echo(f"current={__version__} remote={remote.version} state={state}")
-    click.echo(remote.url)
-    if check and comparison < 0:
-        return
+    finally:
+        if wheel_path is not None:
+            with contextlib.suppress(OSError):
+                wheel_path.unlink()
 
 
 @main.command()
-@click.option("--config", "config_ref", help="TOML config name or path.")
+@click.option(
+    "--config",
+    "config_ref",
+    type=click.Path(path_type=Path),
+    help="Full path to TOML config file.",
+)
 @click.option("--manager", help="Kiosk Manager base URL.")
 @click.option("--screen", "screen_token", help="Screen token.")
 @click.option("--browser", default=None, help="Chromium executable name/path.")
@@ -708,7 +764,14 @@ def service():
 
 
 @service.command(name="install")
-@click.option("--config", "config_name", default="config", show_default=True)
+@click.option(
+    "--config",
+    "config_name",
+    type=click.Path(path_type=Path),
+    default="config",
+    show_default=True,
+    help="Full path to TOML config file.",
+)
 @click.option("--manager", help="Kiosk Manager base URL.")
 @click.option("--screen", "screen_token", help="Screen token.")
 @click.option("--browser", default=None)
@@ -769,8 +832,9 @@ def service_install(
 ):
     """Write TOML config and install idempotent templated service."""
     try:
+        config_file = config_path(config_name)
         values = merge_config(
-            config_name,
+            config_file,
             {
                 "manager": manager,
                 "screen": screen_token,
@@ -822,17 +886,18 @@ def service_install(
         display=values["display"],
         wayland_display=values["wayland_display"],
         runtime_dir=values["runtime_dir"],
+        config_ref=config_file,
     )
     if dry_run:
         click.echo(unit, nl=False)
         return
 
     try:
-        config_path = dump_config(config_name, values)
-        path = install_unit(unit, scope, enable, start, config_name)
+        written_config_path = dump_config(config_file, values)
+        path = install_unit(unit, scope, enable, start, config_file)
     except (ConfigError, OSError, RuntimeError) as exc:
         raise click.ClickException(str(exc)) from exc
-    click.echo(f"Wrote {config_path}")
+    click.echo(f"Wrote {written_config_path}")
     click.echo(f"Installed {path}")
 
 
@@ -842,8 +907,9 @@ def service_install(
 @click.option("--display")
 @click.option("--wayland-display")
 @click.option("--runtime-dir")
+@click.option("--config", "config_ref", type=click.Path(path_type=Path))
 def service_show_unit(
-    scope, service_user, display, wayland_display, runtime_dir
+    scope, service_user, display, wayland_display, runtime_dir, config_ref
 ):
     """Print generated templated systemd unit."""
     environment = current_display_environment()
@@ -854,6 +920,7 @@ def service_show_unit(
             display=display or environment["display"],
             wayland_display=wayland_display or environment["wayland_display"],
             runtime_dir=runtime_dir or environment["runtime_dir"],
+            config_ref=config_ref,
         ),
         nl=False,
     )
@@ -932,7 +999,14 @@ def service_disable(config_name, scope):
 
 
 @service.command(name="logs")
-@click.option("--config", "config_name", default="config", show_default=True)
+@click.option(
+    "--config",
+    "config_name",
+    type=click.Path(path_type=Path),
+    default="config",
+    show_default=True,
+    help="Full path to TOML config file.",
+)
 @click.option("--scope", type=click.Choice(["user", "system"]), default="user")
 @click.option("--follow", is_flag=True)
 @click.option(
