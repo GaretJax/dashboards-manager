@@ -13,7 +13,6 @@ from kiosk_manager.kiosks.models import (
     Screen,
     ScreenContent,
     ScreenContentScreenshot,
-    ScreenRuntimeStatus,
 )
 
 HTML_CONTENT = "<!doctype html><h1>Embedded dashboard</h1>"
@@ -418,10 +417,10 @@ def test_runtime_status_api_persists_latest_snapshot(client):
         response.json()["last_check_in"].replace("Z", "+00:00")
     )
     assert response_timestamp.tzinfo == UTC
-    status = ScreenRuntimeStatus.objects.get(screen=screen)
-    assert status.agent_version == "1.2.3"
-    assert status.current_content_id == content.pk
-    assert status.last_check_in is not None
+    screen.refresh_from_db()
+    assert screen.status_agent_version == "1.2.3"
+    assert screen.status_current_content_id == content.pk
+    assert screen.status_last_check_in is not None
 
 
 @pytest.mark.django_db

@@ -20,7 +20,6 @@ from .models import (
     PowerState,
     Screen,
     ScreenContentScreenshot,
-    ScreenRuntimeStatus,
 )
 from .services import (
     content_url,
@@ -167,39 +166,42 @@ def report_runtime_status(
             raise HttpError(400, f"invalid {name}")
 
     check_in = timezone.now()
-    status, _created = ScreenRuntimeStatus.objects.update_or_create(
-        screen=screen,
-        defaults={
-            "agent_version": payload.agent_version[:64],
-            "browser_version": payload.browser_version[:256],
-            "agent_started_at": utc_datetime(payload.agent_started_at),
-            "uptime_seconds": payload.uptime_seconds,
-            "last_check_in": check_in,
-            "health_state": payload.health_state,
-            "health_error": payload.health_error[:2000],
-            "load_1m": payload.load_1m,
-            "load_5m": payload.load_5m,
-            "load_15m": payload.load_15m,
-            "memory_total_bytes": payload.memory_total_bytes,
-            "memory_used_bytes": payload.memory_used_bytes,
-            "memory_available_bytes": payload.memory_available_bytes,
-            "memory_percent": payload.memory_percent,
-            "current_content": current_content,
-            "last_successful_page_load_at": utc_datetime(
-                payload.last_successful_page_load_at
-            ),
-            "desired_power_state": payload.desired_power_state or "",
-            "actual_power_state": payload.actual_power_state or "",
-            "display_identity": payload.display_identity[:128],
-            "display_width": payload.display_width,
-            "display_height": payload.display_height,
-            "display_refresh_rate": payload.display_refresh_rate,
-            "display_orientation": payload.display_orientation[:32],
-            "browser_error": payload.browser_error[:2000],
-            "display_error": payload.display_error[:2000],
-        },
-    )
-    return {"last_check_in": utc_datetime(status.last_check_in)}
+    status_values = {
+        "status_agent_version": payload.agent_version[:64],
+        "status_browser_version": payload.browser_version[:256],
+        "status_agent_started_at": utc_datetime(payload.agent_started_at),
+        "status_uptime_seconds": payload.uptime_seconds,
+        "status_last_check_in": check_in,
+        "status_health_state": payload.health_state,
+        "status_health_error": payload.health_error[:2000],
+        "status_load_1m": payload.load_1m,
+        "status_load_5m": payload.load_5m,
+        "status_load_15m": payload.load_15m,
+        "status_memory_total_bytes": payload.memory_total_bytes,
+        "status_memory_used_bytes": payload.memory_used_bytes,
+        "status_memory_available_bytes": payload.memory_available_bytes,
+        "status_memory_percent": payload.memory_percent,
+        "status_current_content": current_content,
+        "status_last_successful_page_load_at": utc_datetime(
+            payload.last_successful_page_load_at
+        ),
+        "status_display_identity": payload.display_identity[:128],
+        "status_display_width": payload.display_width,
+        "status_display_height": payload.display_height,
+        "status_display_refresh_rate": payload.display_refresh_rate,
+        "status_display_orientation": payload.display_orientation[:32],
+        "status_browser_error": payload.browser_error[:2000],
+        "status_display_error": payload.display_error[:2000],
+        "status_updated_at": check_in,
+    }
+    if screen.status_created_at is None:
+        status_values["status_created_at"] = check_in
+    if payload.actual_power_state:
+        status_values["status_power_state"] = payload.actual_power_state
+    for field, value in status_values.items():
+        setattr(screen, field, value)
+    screen.save(update_fields=list(status_values))
+    return {"last_check_in": utc_datetime(screen.status_last_check_in)}
 
 
 @router.post("/screens/{token}/screenshots")
@@ -387,12 +389,17 @@ def report_screen_state(
 
     pending = screen.pending_command()
     reported_at = timezone.now()
-    screen.reported_power_state = payload.actual_power_state
-    screen.reported_power_at = reported_at
+    screen.status_power_state = payload.actual_power_state
+    screen.status_power_at = reported_at
+    screen.status_updated_at = reported_at
+    if screen.status_created_at is None:
+        screen.status_created_at = reported_at
     screen.save(
         update_fields=[
-            "reported_power_state",
-            "reported_power_at",
+            "status_power_state",
+            "status_power_at",
+            "status_updated_at",
+            "status_created_at",
             "updated_at",
         ]
     )

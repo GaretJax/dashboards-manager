@@ -60,8 +60,8 @@ poll iteration. Existing logs remain detailed locally.
 
 ## Transient versus persistent issues
 
-Keep `Event` append-only and use existing/latest `ScreenRuntimeStatus` as
-current truth. Agent maintains a bounded issue tracker keyed by code, content
+Keep `Event` append-only and use latest `Screen.status_` fields as current
+truth. Agent maintains a bounded issue tracker keyed by code, content
 identity, and URL:
 
 - emit first occurrence immediately;

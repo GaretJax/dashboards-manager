@@ -5,17 +5,11 @@ from ..models import (
     Event,
     Screen,
     ScreenContentScreenshot,
-    ScreenRuntimeStatus,
 )
-from .runtime import (
-    EventAdmin,
-    ScreenContentScreenshotAdmin,
-    ScreenRuntimeStatusAdmin,
-)
+from .runtime import EventAdmin, ScreenContentScreenshotAdmin
 from .screen import ContentAdmin, ScreenAdmin
 
 admin.site.register(Content, ContentAdmin)
 admin.site.register(Event, EventAdmin)
 admin.site.register(Screen, ScreenAdmin)
-admin.site.register(ScreenRuntimeStatus, ScreenRuntimeStatusAdmin)
 admin.site.register(ScreenContentScreenshot, ScreenContentScreenshotAdmin)

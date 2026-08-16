@@ -142,7 +142,6 @@ class ScreenAdminForm(forms.ModelForm):
             "enabled",
             "on_schedule",
             "off_schedule",
-            "reported_power_state",
         ]
         widgets = {
             "on_schedule": ScheduleRecurrenceWidget,

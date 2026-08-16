@@ -15,37 +15,36 @@ content injection behavior.
 
 ## Backend runtime state
 
-Add a one-to-one `ScreenRuntimeStatus` model rather than adding volatile fields
-to `Screen`:
+Store latest runtime status directly on `Screen` with a `status_` prefix rather
+than using a separate one-to-one model:
 
 ### Agent/host
 
-- Screen identity through `Screen` foreign key.
-- `agent_version`.
-- `browser_version`.
-- `agent_started_at` and `uptime_seconds`.
-- server-owned `last_check_in` timestamp.
-- `health_state`: `unknown`, `healthy`, `degraded`, or `error`.
-- bounded `health_error` / latest error summary.
-- load averages (1/5/15 minute, nullable).
-- memory total, used, available bytes and percentage (nullable).
+- `status_agent_version`.
+- `status_browser_version`.
+- `status_agent_started_at` and `status_uptime_seconds`.
+- server-owned `status_last_check_in` timestamp.
+- `status_health_state`: `unknown`, `healthy`, `degraded`, or `error`.
+- bounded `status_health_error` / latest error summary.
+- `status_`-prefixed load averages (1/5/15 minute, nullable).
+- `status_`-prefixed memory total, used, available bytes and percentage
+  (nullable).
 
 ### Current screen state
 
-- current content foreign key, nullable.
-- `last_successful_page_load_at`.
-- desired power state.
-- actual power state, nullable/unknown when unavailable.
-- display identity/output name.
-- resolution width/height.
-- refresh rate Hz.
-- orientation/transform.
-- browser error and display error, separately bounded and nullable.
+- `status_current_content` foreign key, nullable.
+- `status_last_successful_page_load_at`.
+- desired power state remains computed by `Screen.desired_power_state()`.
+- `status_power_state`, nullable/unknown when unavailable.
+- `status_`-prefixed display identity/output name, resolution, refresh rate,
+  and orientation/transform.
+- `status_`-prefixed browser and display errors, separately bounded and
+  nullable.
 
 Agent-provided event timestamps are accepted only when newer than the stored
-value. `last_check_in` is always assigned by Django on successful receipt, not
-trusted from the agent clock. A status is considered stale/offline when its
-last check-in exceeds a documented multiple of the configured report interval;
+value. `status_last_check_in` is always assigned by Django on successful
+receipt, not trusted from the agent clock. A status is considered stale/offline
+when its last check-in exceeds a documented multiple of the configured report interval;
 no extra heartbeat history table is required for this feature.
 
 ## Status endpoint
@@ -174,7 +173,8 @@ size limit and PNG signature/content type, and reject malformed or oversized
 uploads. Do not trust filename or client-provided screen identity. Replace
 existing row/file only when incoming capture is newer.
 
-Add admin read-only display/link for latest screenshots and runtime status.
+Add admin read-only display/link for latest screenshots and inline runtime
+status on the screen detail page.
 No public screenshot listing endpoint is required.
 
 ## Screenshot capture policy

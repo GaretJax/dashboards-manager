@@ -228,18 +228,97 @@ class Screen(models.Model):
             "Temporary on/off override. Clear to follow configured schedule."
         ),
     )
-    reported_power_state = models.CharField(
-        _("reported power state"),
+    status_power_state = models.CharField(
+        _("status power state"),
         max_length=16,
         choices=PowerState.choices,
         default=PowerState.UNKNOWN,
         help_text=_("Last power state reported by kiosk agent."),
     )
-    reported_power_at = models.DateTimeField(
-        _("reported power at"),
+    status_power_at = models.DateTimeField(
+        _("status power at"),
         blank=True,
         null=True,
     )
+    status_agent_version = models.CharField(
+        _("status agent version"), max_length=64, blank=True
+    )
+    status_browser_version = models.CharField(
+        _("status browser version"), max_length=256, blank=True
+    )
+    status_agent_started_at = models.DateTimeField(
+        _("status agent started at"), blank=True, null=True
+    )
+    status_uptime_seconds = models.FloatField(
+        _("status uptime (seconds)"), blank=True, null=True
+    )
+    status_last_check_in = models.DateTimeField(
+        _("status last check-in"), blank=True, null=True
+    )
+    status_health_state = models.CharField(
+        _("status health state"),
+        max_length=16,
+        choices=HealthState.choices,
+        default=HEALTH_UNKNOWN,
+    )
+    status_health_error = models.TextField(
+        _("status health error"), blank=True
+    )
+    status_load_1m = models.FloatField(
+        _("status one-minute load"), blank=True, null=True
+    )
+    status_load_5m = models.FloatField(
+        _("status five-minute load"), blank=True, null=True
+    )
+    status_load_15m = models.FloatField(
+        _("status fifteen-minute load"), blank=True, null=True
+    )
+    status_memory_total_bytes = models.BigIntegerField(
+        _("status memory total (bytes)"), blank=True, null=True
+    )
+    status_memory_used_bytes = models.BigIntegerField(
+        _("status memory used (bytes)"), blank=True, null=True
+    )
+    status_memory_available_bytes = models.BigIntegerField(
+        _("status memory available (bytes)"), blank=True, null=True
+    )
+    status_memory_percent = models.FloatField(
+        _("status memory used (percent)"), blank=True, null=True
+    )
+    status_current_content = models.ForeignKey(
+        "Content",
+        verbose_name=_("status current content"),
+        related_name="status_screens",
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL,
+    )
+    status_last_successful_page_load_at = models.DateTimeField(
+        _("status last successful page load at"), blank=True, null=True
+    )
+    status_display_identity = models.CharField(
+        _("status display identity"), max_length=128, blank=True
+    )
+    status_display_width = models.PositiveIntegerField(
+        _("status display width"), blank=True, null=True
+    )
+    status_display_height = models.PositiveIntegerField(
+        _("status display height"), blank=True, null=True
+    )
+    status_display_refresh_rate = models.FloatField(
+        _("status display refresh rate"), blank=True, null=True
+    )
+    status_display_orientation = models.CharField(
+        _("status display orientation"), max_length=32, blank=True
+    )
+    status_browser_error = models.TextField(
+        _("status browser error"), blank=True
+    )
+    status_display_error = models.TextField(
+        _("status display error"), blank=True
+    )
+    status_created_at = models.DateTimeField(blank=True, null=True)
+    status_updated_at = models.DateTimeField(blank=True, null=True)
     created_at = models.DateTimeField(_("created at"), auto_now_add=True)
     updated_at = models.DateTimeField(_("updated at"), auto_now=True)
 
@@ -532,112 +611,6 @@ class Content(models.Model):
             raise ValidationError(message)
         if has_media:
             media_format_for_name(self.media.name)
-
-
-class ScreenRuntimeStatus(models.Model):
-    screen = models.OneToOneField(
-        Screen,
-        verbose_name=_("screen"),
-        related_name="runtime_status",
-        on_delete=models.CASCADE,
-    )
-    agent_version = models.CharField(
-        _("agent version"), max_length=64, blank=True
-    )
-    browser_version = models.CharField(
-        _("browser version"), max_length=256, blank=True
-    )
-    agent_started_at = models.DateTimeField(
-        _("agent started at"), blank=True, null=True
-    )
-    uptime_seconds = models.FloatField(
-        _("uptime (seconds)"), blank=True, null=True
-    )
-    last_check_in = models.DateTimeField(
-        _("last check-in"), blank=True, null=True
-    )
-    health_state = models.CharField(
-        _("health state"),
-        max_length=16,
-        choices=HealthState.choices,
-        default=HEALTH_UNKNOWN,
-    )
-    health_error = models.TextField(_("health error"), blank=True)
-    load_1m = models.FloatField(_("one-minute load"), blank=True, null=True)
-    load_5m = models.FloatField(_("five-minute load"), blank=True, null=True)
-    load_15m = models.FloatField(
-        _("fifteen-minute load"), blank=True, null=True
-    )
-    memory_total_bytes = models.BigIntegerField(
-        _("memory total (bytes)"), blank=True, null=True
-    )
-    memory_used_bytes = models.BigIntegerField(
-        _("memory used (bytes)"), blank=True, null=True
-    )
-    memory_available_bytes = models.BigIntegerField(
-        _("memory available (bytes)"), blank=True, null=True
-    )
-    memory_percent = models.FloatField(
-        _("memory used (percent)"), blank=True, null=True
-    )
-    current_content = models.ForeignKey(
-        "Content",
-        verbose_name=_("current content"),
-        related_name="runtime_statuses",
-        blank=True,
-        null=True,
-        on_delete=models.SET_NULL,
-    )
-    last_successful_page_load_at = models.DateTimeField(
-        _("last successful page load at"), blank=True, null=True
-    )
-    desired_power_state = models.CharField(
-        _("desired power state"),
-        max_length=16,
-        choices=PowerState.choices,
-        blank=True,
-        default="",
-    )
-    actual_power_state = models.CharField(
-        _("actual power state"),
-        max_length=16,
-        choices=PowerState.choices,
-        blank=True,
-        default="",
-    )
-    display_identity = models.CharField(
-        _("display identity"), max_length=128, blank=True
-    )
-    display_width = models.PositiveIntegerField(
-        _("display width"), blank=True, null=True
-    )
-    display_height = models.PositiveIntegerField(
-        _("display height"), blank=True, null=True
-    )
-    display_refresh_rate = models.FloatField(
-        _("display refresh rate"), blank=True, null=True
-    )
-    display_orientation = models.CharField(
-        _("display orientation"), max_length=32, blank=True
-    )
-    browser_error = models.TextField(_("browser error"), blank=True)
-    display_error = models.TextField(_("display error"), blank=True)
-    created_at = models.DateTimeField(_("created at"), auto_now_add=True)
-    updated_at = models.DateTimeField(_("updated at"), auto_now=True)
-
-    class Meta:
-        ordering = ["-last_check_in", "screen_id"]
-        verbose_name = _("screen runtime status")
-        verbose_name_plural = _("screen runtime statuses")
-        indexes = [
-            models.Index(
-                fields=["health_state", "last_check_in"],
-                name="kiosks_status_health_check",
-            ),
-        ]
-
-    def __str__(self):
-        return f"{self.screen} · {self.health_state}"
 
 
 class ScreenContentScreenshot(models.Model):

@@ -46,8 +46,8 @@ def power_status(screen: Screen) -> dict:
     pending = screen.pending_command()
     return {
         "desired_power_state": screen.desired_power_state(),
-        "reported_power_state": screen.reported_power_state,
-        "reported_power_at": utc_datetime(screen.reported_power_at),
+        "reported_power_state": screen.status_power_state,
+        "reported_power_at": utc_datetime(screen.status_power_at),
         "pending_command": (
             {"id": pending.id, "command": pending.command}
             if pending is not None

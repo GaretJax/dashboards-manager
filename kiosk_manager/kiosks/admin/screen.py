@@ -16,15 +16,11 @@ from ..models import (
     HealthState,
     PowerState,
     ScreenContent,
-    ScreenRuntimeStatus,
 )
 
 
 def _runtime_status(screen):
-    try:
-        return screen.runtime_status
-    except ScreenRuntimeStatus.DoesNotExist:
-        return None
+    return screen
 
 
 def _format_duration(seconds):
@@ -295,10 +291,10 @@ class ScreenAdmin(ModelAdmin):
     @admin.display(description=_("reported power state"))
     @options(desc=_("Last power state reported by kiosk agent"))
     def reported_power_state_display(self, screen):
-        icon = _power_state_icon(screen.reported_power_state)
-        if screen.reported_power_at is None:
+        icon = _power_state_icon(screen.status_power_state)
+        if screen.status_power_at is None:
             return icon
-        reported_at = display_for_value(screen.reported_power_at, _("unknown"))
+        reported_at = display_for_value(screen.status_power_at, _("unknown"))
         return format_html(
             "{} ({})",
             icon,
@@ -333,8 +329,8 @@ class ScreenAdmin(ModelAdmin):
             return "-"
         return format_html(
             "{} ({})",
-            status.agent_version or "-",
-            status.browser_version or "-",
+            status.status_agent_version or "-",
+            status.status_browser_version or "-",
         )
 
     @admin.display(description=_("Agent Uptime"))
@@ -343,19 +339,21 @@ class ScreenAdmin(ModelAdmin):
         status = _runtime_status(screen)
         if status is None:
             return "-"
-        uptime = status.uptime_seconds
-        if uptime is None and status.agent_started_at is not None:
-            uptime = (timezone.now() - status.agent_started_at).total_seconds()
-        return _status_date(status.agent_started_at, uptime)
+        uptime = status.status_uptime_seconds
+        if uptime is None and status.status_agent_started_at is not None:
+            uptime = (
+                timezone.now() - status.status_agent_started_at
+            ).total_seconds()
+        return _status_date(status.status_agent_started_at, uptime)
 
     @admin.display(description=_("Last Check-In"))
     @options(desc=_("Last status report and elapsed time"))
     def last_check_in_display(self, screen):
         status = _runtime_status(screen)
-        if status is None or status.last_check_in is None:
+        if status is None or status.status_last_check_in is None:
             return "-"
-        age = (timezone.now() - status.last_check_in).total_seconds()
-        return _status_date(status.last_check_in, age)
+        age = (timezone.now() - status.status_last_check_in).total_seconds()
+        return _status_date(status.status_last_check_in, age)
 
     @admin.display(description=_("Health"))
     @options(desc=_("Health state and browser/display errors"))
@@ -363,19 +361,19 @@ class ScreenAdmin(ModelAdmin):
         status = _runtime_status(screen)
         if status is None:
             return "-"
-        health_state = status.health_state
+        health_state = status.status_health_state
         health_issue = (
             health_state in {HealthState.DEGRADED, HealthState.ERROR}
-            or bool(status.health_error)
-            or bool(status.browser_error)
-            or bool(status.display_error)
+            or bool(status.status_health_error)
+            or bool(status.status_browser_error)
+            or bool(status.status_display_error)
         )
         lines = [
             display_for_value(not health_issue, _("unknown"), boolean=True),
         ]
-        if status.health_error:
+        if status.status_health_error:
             lines.append(
-                format_html("{}: {}", _("Health"), status.health_error)
+                format_html("{}: {}", _("Health"), status.status_health_error)
             )
         elif health_state in {HealthState.DEGRADED, HealthState.ERROR}:
             lines.append(
@@ -383,13 +381,14 @@ class ScreenAdmin(ModelAdmin):
                     "{}: {}",
                     _("Health"),
                     (
-                        status.get_health_state_display() or health_state
+                        status.get_status_health_state_display()
+                        or health_state
                     ).title(),
                 )
             )
         for label, error in (
-            (_("Browser"), status.browser_error),
-            (_("Display"), status.display_error),
+            (_("Browser"), status.status_browser_error),
+            (_("Display"), status.status_display_error),
         ):
             if error:
                 lines.append(format_html("{}: {}", label, error))
@@ -407,9 +406,9 @@ class ScreenAdmin(ModelAdmin):
             return "-"
         return format_html(
             "1m: {} · 5m: {} · 15m: {}",
-            _format_load(status.load_1m),
-            _format_load(status.load_5m),
-            _format_load(status.load_15m),
+            _format_load(status.status_load_1m),
+            _format_load(status.status_load_5m),
+            _format_load(status.status_load_15m),
         )
 
     @admin.display(description=_("Memory"))
@@ -420,13 +419,13 @@ class ScreenAdmin(ModelAdmin):
             return "-"
         percent = (
             "-"
-            if status.memory_percent is None
-            else f"{status.memory_percent:.1f}%"
+            if status.status_memory_percent is None
+            else f"{status.status_memory_percent:.1f}%"
         )
         return format_html(
             "{} / {} used ({})",
-            _format_bytes(status.memory_used_bytes),
-            _format_bytes(status.memory_total_bytes),
+            _format_bytes(status.status_memory_used_bytes),
+            _format_bytes(status.status_memory_total_bytes),
             percent,
         )
 
@@ -437,19 +436,19 @@ class ScreenAdmin(ModelAdmin):
         if status is None:
             return "-"
         dimensions = (
-            f"{status.display_width} x {status.display_height}"
-            if status.display_width is not None
-            and status.display_height is not None
+            f"{status.status_display_width} x {status.status_display_height}"
+            if status.status_display_width is not None
+            and status.status_display_height is not None
             else "-"
         )
         refresh = (
             "-"
-            if status.display_refresh_rate is None
-            else f"{status.display_refresh_rate:.1f} Hz"
+            if status.status_display_refresh_rate is None
+            else f"{status.status_display_refresh_rate:.1f} Hz"
         )
         return format_html(
             "{} · {} @ {}",
-            status.display_identity or "-",
+            status.status_display_identity or "-",
             dimensions,
             refresh,
         )

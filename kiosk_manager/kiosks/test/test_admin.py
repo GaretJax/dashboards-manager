@@ -7,17 +7,10 @@ from django.utils import timezone
 
 import pytest
 
-from kiosk_manager.kiosks.admin.runtime import (
-    ScreenContentScreenshotAdmin,
-    ScreenRuntimeStatusAdmin,
-)
+from kiosk_manager.kiosks.admin.runtime import ScreenContentScreenshotAdmin
 from kiosk_manager.kiosks.admin.screen import ScreenAdmin
 from kiosk_manager.kiosks.forms import ContentAdminForm, ScreenAdminForm
-from kiosk_manager.kiosks.models import (
-    Screen,
-    ScreenCommand,
-    ScreenRuntimeStatus,
-)
+from kiosk_manager.kiosks.models import Screen, ScreenCommand
 
 
 @pytest.mark.django_db
@@ -120,35 +113,33 @@ def test_content_admin_form_rejects_media_mime_mismatch():
 
 
 def test_runtime_admin_disables_manual_additions():
-    assert not ScreenRuntimeStatusAdmin.has_add_permission(None, None)
     assert not ScreenContentScreenshotAdmin.has_add_permission(None, None)
 
 
 @pytest.mark.django_db
 def test_screen_admin_status_displays_formatted_runtime_values():
     now = timezone.now()
-    screen = Screen.objects.create(name="Lobby")
-    ScreenRuntimeStatus.objects.create(
-        screen=screen,
-        agent_version="0.2.5",
-        browser_version="Chrome/149.0.0.0",
-        agent_started_at=now - timedelta(days=1, hours=2, minutes=3),
-        uptime_seconds=93784,
-        last_check_in=now - timedelta(minutes=5, seconds=2),
-        health_state="degraded",
-        health_error="CEC unavailable",
-        browser_error="page timeout",
-        display_error="HDMI missing",
-        load_1m=0.12,
-        load_5m=0.34,
-        load_15m=0.56,
-        memory_total_bytes=2 * 1024**3,
-        memory_used_bytes=512 * 1024**2,
-        memory_percent=25,
-        display_identity="HDMI-A-1",
-        display_width=1920,
-        display_height=1080,
-        display_refresh_rate=60,
+    screen = Screen.objects.create(
+        name="Lobby",
+        status_agent_version="0.2.5",
+        status_browser_version="Chrome/149.0.0.0",
+        status_agent_started_at=now - timedelta(days=1, hours=2, minutes=3),
+        status_uptime_seconds=93784,
+        status_last_check_in=now - timedelta(minutes=5, seconds=2),
+        status_health_state="degraded",
+        status_health_error="CEC unavailable",
+        status_browser_error="page timeout",
+        status_display_error="HDMI missing",
+        status_load_1m=0.12,
+        status_load_5m=0.34,
+        status_load_15m=0.56,
+        status_memory_total_bytes=2 * 1024**3,
+        status_memory_used_bytes=512 * 1024**2,
+        status_memory_percent=25,
+        status_display_identity="HDMI-A-1",
+        status_display_width=1920,
+        status_display_height=1080,
+        status_display_refresh_rate=60,
     )
 
     assert "0.2.5 (Chrome/149.0.0.0)" in str(
@@ -177,8 +168,10 @@ def test_screen_admin_status_displays_formatted_runtime_values():
 
 @pytest.mark.django_db
 def test_screen_admin_healthy_status_only_shows_overall_icon():
-    screen = Screen.objects.create(name="Lobby")
-    ScreenRuntimeStatus.objects.create(screen=screen, health_state="healthy")
+    screen = Screen.objects.create(
+        name="Lobby",
+        status_health_state="healthy",
+    )
 
     health = str(ScreenAdmin.health_display(None, screen))
 
@@ -203,8 +196,8 @@ def test_screen_admin_schedule_widget_includes_time_control():
 def test_screen_admin_power_states_use_boolean_icons_and_override_label():
     screen = Screen(
         power_override="on",
-        reported_power_state="off",
-        reported_power_at=timezone.now(),
+        status_power_state="off",
+        status_power_at=timezone.now(),
     )
 
     desired = ScreenAdmin.desired_power_state_display(None, screen)
@@ -230,7 +223,7 @@ def test_screen_admin_desired_state_shows_next_scheduled_change():
 
 
 def test_screen_admin_unknown_power_state_uses_unknown_icon():
-    screen = Screen(reported_power_state="unknown")
+    screen = Screen(status_power_state="unknown")
 
     reported = ScreenAdmin.reported_power_state_display(None, screen)
 
