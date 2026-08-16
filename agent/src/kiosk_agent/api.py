@@ -225,7 +225,7 @@ class ManagerClient:
             reported_power_state=reported_power_state or "unknown",
             pending_command=pending_command,
         )
-        LOGGER.info(
+        LOGGER.debug(
             "fetched config version=%s items=%d",
             config.version,
             len(config.items),

@@ -17,6 +17,12 @@ def _item(url, duration, preload_delay=0):
     )
 
 
+def test_runner_uses_configured_event_level():
+    runner = AgentRunner(Mock(), Mock(), event_level="INFO")
+
+    assert runner.telemetry.events.minimum_level == "INFO"
+
+
 def test_new_agent_update_installs_and_requests_service_restart(monkeypatch):
     manager = Mock()
     manager.check_agent_update.return_value = AgentUpdate(

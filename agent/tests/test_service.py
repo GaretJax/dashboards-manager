@@ -1,5 +1,6 @@
 from unittest.mock import Mock
 
+from kiosk_agent.paths import get_paths
 from kiosk_agent.service import (
     render_unit,
     run_journalctl,
@@ -21,7 +22,7 @@ def test_user_template_targets_default_target_and_graphical_session():
     assert "WantedBy=default.target" in unit
     assert "Environment=DISPLAY=:0" in unit
     assert "Environment=XDG_RUNTIME_DIR=/run/user/1000" in unit
-    assert "run --config %i" in unit
+    assert f"--config {get_paths().config / '%i.toml'}" in unit
     assert "kiosk-agent@.service" not in unit
 
 

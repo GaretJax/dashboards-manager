@@ -432,7 +432,7 @@ class AgentRunner:
                 item.injected_javascript_before,
                 item.injected_javascript_after,
             )
-            LOGGER.info(
+            LOGGER.debug(
                 "scheduled preload url=%s lead_seconds=%.1f",
                 item.url,
                 max(0, due - now),

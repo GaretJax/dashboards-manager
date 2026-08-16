@@ -99,7 +99,7 @@ def test_preload_finishes_on_load_event(caplog, tmp_path):
     socket = Mock()
     socket.recv.return_value = json.dumps({"method": "Page.loadEventFired"})
 
-    caplog.set_level(logging.INFO, logger="kiosk_agent.browser")
+    caplog.set_level(logging.DEBUG, logger="kiosk_agent.browser")
     method_name = "_navigate_and_wait"
     navigate_and_wait = getattr(controller, method_name)
     navigate_and_wait(socket, "https://example.test", 0, 30)
@@ -176,7 +176,7 @@ def test_numeric_preload_logs_load_event(caplog, tmp_path):
     socket = Mock()
     socket.recv.return_value = json.dumps({"method": "Page.loadEventFired"})
 
-    caplog.set_level(logging.INFO, logger="kiosk_agent.browser")
+    caplog.set_level(logging.DEBUG, logger="kiosk_agent.browser")
     controller._navigate_and_wait(  # pyright: ignore[reportPrivateUsage]
         socket,
         "https://example.test",
@@ -184,8 +184,13 @@ def test_numeric_preload_logs_load_event(caplog, tmp_path):
         30,
     )
 
-    assert "page load event received" in caplog.text
-    assert "page load done" in caplog.text
+    load_records = [
+        record
+        for record in caplog.records
+        if "page load" in record.getMessage()
+    ]
+    assert load_records
+    assert all(record.levelno == logging.DEBUG for record in load_records)
 
 
 def test_javascript_dialog_policy(monkeypatch, tmp_path):
@@ -258,7 +263,7 @@ def test_numeric_preload_waits_from_load_event(monkeypatch, caplog, tmp_path):
         "_navigate_and_wait",
         lambda *_args: True,
     )
-    caplog.set_level(logging.INFO, logger="kiosk_agent.browser")
+    caplog.set_level(logging.DEBUG, logger="kiosk_agent.browser")
 
     controller._load_preload(job)  # pyright: ignore[reportPrivateUsage]
 

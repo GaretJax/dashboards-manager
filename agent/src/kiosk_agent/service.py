@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .config import config_path, validate_config_name
 from .display import runtime_directory
-from .paths import APP_NAME, ephemeral_runtime_reason
+from .paths import APP_NAME, ephemeral_runtime_reason, get_paths
 
 SERVICE_TEMPLATE_NAME = "kiosk-agent@.service"
 
@@ -104,7 +104,9 @@ def run_journalctl(
 
 def _run_command(config_ref: str | Path | None = None) -> list[str]:
     config_argument = (
-        "%i" if config_ref is None else str(config_path(config_ref))
+        str(get_paths().config / "%i.toml")
+        if config_ref is None
+        else str(config_path(config_ref))
     )
     return [
         sys.executable,

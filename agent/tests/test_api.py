@@ -107,10 +107,15 @@ def fake_client(monkeypatch):
 def test_manager_client_fetches_and_orders_playlist(fake_client, caplog):
     client = ManagerClient("https://manager.example/", "token/value")
 
-    caplog.set_level(logging.INFO, logger="kiosk_agent.api")
+    caplog.set_level(logging.DEBUG, logger="kiosk_agent.api")
     config = client.fetch_config()
 
     assert "fetched config version=abc items=2" in caplog.text
+    assert any(
+        record.levelno == logging.DEBUG
+        and "fetched config" in record.getMessage()
+        for record in caplog.records
+    )
     assert fake_client.url == (
         "https://manager.example/api/screens/token%2Fvalue/config"
     )

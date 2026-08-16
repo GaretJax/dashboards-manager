@@ -241,7 +241,7 @@ class BrowserController:
                     )
                     and delay > 0
                 ):
-                    LOGGER.info(
+                    LOGGER.debug(
                         "preload delay elapsed url=%s seconds=%.1f",
                         job.url,
                         delay,
@@ -577,7 +577,7 @@ class BrowserController:
             or timeout_seconds <= 0
         ):
             raise BrowserError("preload settings must contain valid seconds")
-        LOGGER.info(
+        LOGGER.debug(
             "page load started url=%s preload_delay_seconds=%.1f "
             "timeout_seconds=%.1f",
             url,
@@ -615,7 +615,7 @@ class BrowserController:
                     continue
                 if message.get("method") == "Page.loadEventFired":
                     load_event = True
-                    LOGGER.info(
+                    LOGGER.debug(
                         "page load event received url=%s elapsed_seconds=%.3f",
                         url,
                         time.monotonic() - started,
@@ -639,7 +639,7 @@ class BrowserController:
                 return False
             if injected_css:
                 self._install_current_css(socket, injected_css)
-            LOGGER.info(
+            LOGGER.debug(
                 "page load done url=%s result=loaded",
                 url,
             )

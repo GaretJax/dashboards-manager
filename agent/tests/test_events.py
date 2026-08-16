@@ -16,6 +16,16 @@ def test_event_reporter_filters_events_below_minimum_level():
     assert [event["code"] for event in events] == ["navigation_failed"]
 
 
+def test_event_reporter_filters_debug_at_info_level():
+    manager = Mock()
+    reporter = AgentEventReporter(manager, minimum_level="INFO")
+
+    reporter.emit("loading", "DEBUG", "ignored")
+    assert reporter.flush()
+
+    manager.report_events.assert_not_called()
+
+
 def test_event_reporter_batches_and_flushes_events():
     manager = Mock()
     reporter = AgentEventReporter(manager)

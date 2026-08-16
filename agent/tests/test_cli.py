@@ -15,7 +15,7 @@ def test_module_cli_exposes_version():
     result = CliRunner().invoke(main, ["--version"])
 
     assert result.exit_code == 0
-    assert "0.2.3" in result.output
+    assert "0.2.4" in result.output
 
 
 def test_httpx_request_logs_are_demoted_to_debug():
@@ -326,7 +326,8 @@ def test_show_unit_command_prints_unit():
     assert "[Unit]" in result.output
     assert "ExecStart=" in result.output
     assert "kiosk_agent" in result.output
-    assert "--config %i" in result.output
+    assert "--config " in result.output
+    assert "%i.toml" in result.output
 
 
 def test_cec_detect_command_prints_ports(monkeypatch):
