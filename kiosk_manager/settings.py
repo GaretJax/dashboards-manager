@@ -124,6 +124,7 @@ TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 
+DEFAULT_STORAGE_DSN = os.environ.get("DEFAULT_STORAGE_DSN")
 MEDIA_ROOT = BASE_DIR / "media"
 MEDIA_URL = f"{SITE_BASE_PATH}/media/"
 STATIC_URL = f"{SITE_BASE_PATH}/static/"
@@ -134,7 +135,7 @@ STATICFILES_DIRS = [
     Path(recurrence.__file__).resolve().parent / "static",
 ]
 STORAGES = {
-    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "default": {"BACKEND": "kiosk_manager.storage.DefaultStorage"},
     "staticfiles": {
         "BACKEND": (
             "django.contrib.staticfiles.storage.StaticFilesStorage"

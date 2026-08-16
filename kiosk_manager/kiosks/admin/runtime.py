@@ -25,6 +25,9 @@ class ScreenRuntimeStatusAdmin(ModelAdmin):
     ordering = ["-last_check_in", "screen_id"]
     date_hierarchy = "last_check_in"
 
+    def has_add_permission(self, request):
+        return False
+
 
 class EventAdmin(ModelAdmin):
     list_display = [
@@ -79,6 +82,9 @@ class ScreenContentScreenshotAdmin(ModelAdmin):
     ]
     ordering = ["-captured_at", "screen_id", "content_id"]
     date_hierarchy = "captured_at"
+
+    def has_add_permission(self, request):
+        return False
 
     @admin.display(description=_("screenshot"))
     @options(desc=_("Latest diagnostic screenshot"))

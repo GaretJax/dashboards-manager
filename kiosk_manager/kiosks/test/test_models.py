@@ -4,6 +4,7 @@ from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 import pytest
+from recurrence import DAILY, Recurrence, Rule
 
 from kiosk_manager.kiosks.models import (
     Content,
@@ -24,6 +25,12 @@ def test_screen_generates_public_token():
 
     assert screen.public_token
     assert len(screen.public_token) >= 32
+
+
+def test_screen_get_absolute_url():
+    screen = Screen(name="Lobby")
+
+    assert screen.get_absolute_url() == f"/screens/{screen.public_token}/"
 
 
 @pytest.mark.django_db
@@ -62,6 +69,13 @@ def test_playlist_is_ordered_and_configuration_has_version():
 
 
 @pytest.mark.django_db
+def test_content_label_is_used_for_string_representation():
+    content = Content(label="Lobby dashboard", url="https://example.com")
+
+    assert str(content) == "Lobby dashboard"
+
+
+@pytest.mark.django_db
 def test_content_requires_url_xor_html_file():
     with pytest.raises(ValidationError):
         Content().full_clean()
@@ -71,7 +85,7 @@ def test_content_requires_url_xor_html_file():
             html_file=_content_file(),
         ).full_clean()
 
-    content = Content(html_file=_content_file())
+    content = Content(label="Uploaded content", html_file=_content_file())
     content.full_clean()
     assert content.html_file.name == "content.html"
 
@@ -140,11 +154,24 @@ def test_same_content_can_repeat_in_playlist():
 
 
 @pytest.mark.django_db
+def test_desired_power_state_defaults_on_without_schedule():
+    screen = Screen.objects.create(name="Lobby")
+
+    assert screen.desired_power_state() == "on"
+
+
+@pytest.mark.django_db
 def test_power_override_takes_precedence_over_schedule():
     screen = Screen.objects.create(
         name="Lobby",
-        on_schedule="DTSTART:20260101T080000Z\nRRULE:FREQ=DAILY",
-        off_schedule="DTSTART:20260101T220000Z\nRRULE:FREQ=DAILY",
+        on_schedule=(
+            "DTSTART:20260101T000000Z\n"
+            "RRULE:FREQ=DAILY;BYHOUR=8;BYMINUTE=0;BYSECOND=0"
+        ),
+        off_schedule=(
+            "DTSTART:20260101T000000Z\n"
+            "RRULE:FREQ=DAILY;BYHOUR=22;BYMINUTE=0;BYSECOND=0"
+        ),
     )
     at = datetime(2026, 1, 2, 23, tzinfo=UTC)
 
@@ -152,6 +179,35 @@ def test_power_override_takes_precedence_over_schedule():
     screen.power_override = "on"
 
     assert screen.desired_power_state(at) == "on"
+
+
+@pytest.mark.django_db
+def test_scheduled_power_state_anchors_rules_without_dtstart():
+    screen = Screen(
+        name="Lobby",
+        on_schedule="RRULE:FREQ=DAILY;BYHOUR=8;BYMINUTE=0;BYSECOND=0",
+    )
+
+    assert (
+        screen.scheduled_power_state(datetime(2026, 1, 2, 9, tzinfo=UTC))
+        == "on"
+    )
+
+
+@pytest.mark.django_db
+def test_scheduled_power_state_normalizes_naive_recurrence_occurrences():
+    screen = Screen(
+        name="Lobby",
+        on_schedule=Recurrence(
+            dtstart=datetime(2026, 1, 1, 8),
+            rrules=[Rule(DAILY)],
+        ),
+    )
+
+    assert (
+        screen.scheduled_power_state(datetime(2026, 1, 2, 9, tzinfo=UTC))
+        == "on"
+    )
 
 
 @pytest.mark.django_db

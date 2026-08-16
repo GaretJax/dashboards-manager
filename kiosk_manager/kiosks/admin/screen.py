@@ -2,13 +2,25 @@ from urllib.parse import quote
 
 from django.conf import settings
 from django.contrib import admin, messages
+from django.contrib.admin.utils import display_for_value
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
 from adminutils import ModelAdmin, object_action, options
 
+from ..forms import ScreenAdminForm
 from ..models import PowerState, ScreenContent
+
+
+def _power_state_icon(state):
+    if state == PowerState.ON:
+        value = True
+    elif state == PowerState.OFF:
+        value = False
+    else:
+        value = None
+    return display_for_value(value, _("unknown"), boolean=True)
 
 
 class ScreenContentInline(admin.TabularInline):
@@ -34,6 +46,7 @@ class ContentAdmin(ModelAdmin):
             {
                 "fields": [
                     "id",
+                    "label",
                     "url",
                     "html_file",
                     "preload_delay_seconds",
@@ -54,20 +67,17 @@ class ContentAdmin(ModelAdmin):
             },
         ),
     ]
-    list_display = ["source_display", "preload_delay_seconds", "updated_at"]
+    list_display = ["label", "preload_delay_seconds", "updated_at"]
     list_filter = ["created_at", "updated_at"]
-    search_fields = ["url", "html_file"]
+    search_fields = ["label", "url", "html_file"]
     readonly_fields = ["id", "created_at", "updated_at"]
     ordering = ["-updated_at", "pk"]
     date_hierarchy = "created_at"
 
-    @admin.display(description=_("source"))
-    @options(desc=_("URL or uploaded HTML file"))
-    def source_display(self, content):
-        return str(content)
-
 
 class ScreenAdmin(ModelAdmin):
+    form = ScreenAdminForm
+    view_on_site = True
     fieldsets = [
         (
             _("Screen").upper(),
@@ -75,6 +85,7 @@ class ScreenAdmin(ModelAdmin):
                 "fields": [
                     "id",
                     "name",
+                    "public_token",
                     "enabled",
                 ],
             },
@@ -92,20 +103,9 @@ class ScreenAdmin(ModelAdmin):
             _("Remote state").upper(),
             {
                 "fields": [
-                    "power_override",
                     "desired_power_state_display",
-                    "reported_power_state",
-                    "reported_power_at",
+                    "reported_power_state_display",
                     "pending_agent_command_display",
-                ],
-            },
-        ),
-        (
-            _("Public access").upper(),
-            {
-                "fields": [
-                    "public_token",
-                    "display_url",
                 ],
             },
         ),
@@ -128,7 +128,7 @@ class ScreenAdmin(ModelAdmin):
             },
         ),
     ]
-    list_display = ["name", "enabled", "display_url", "updated_at"]
+    list_display = ["name", "enabled", "updated_at"]
     list_filter = ["enabled", "created_at", "updated_at"]
     search_fields = [
         "name",
@@ -139,13 +139,10 @@ class ScreenAdmin(ModelAdmin):
     readonly_fields = [
         "id",
         "public_token",
-        "display_url",
         "agent_install_url",
         "agent_install_command",
-        "power_override",
         "desired_power_state_display",
-        "reported_power_state",
-        "reported_power_at",
+        "reported_power_state_display",
         "pending_agent_command_display",
         "created_at",
         "updated_at",
@@ -158,16 +155,9 @@ class ScreenAdmin(ModelAdmin):
         "screen_off_action",
         "follow_schedule_action",
         "restart_agent_action",
+        "clear_pending_commands_action",
         "rotate_public_token_action",
     ]
-
-    @admin.display(description=_("display URL"))
-    @options(desc=_("Public URL for this screen"))
-    def display_url(self, screen):
-        display_url = (
-            f"{settings.SITE_BASE_PATH}/screens/{screen.public_token}/"
-        )
-        return format_html('<a href="{0}">{0}</a>', display_url)
 
     def _agent_install_url(self, screen):
         if not screen.enabled:
@@ -202,13 +192,54 @@ class ScreenAdmin(ModelAdmin):
     @admin.display(description=_("desired power state"))
     @options(desc=_("Power state currently desired by schedule or override"))
     def desired_power_state_display(self, screen):
-        return screen.desired_power_state() or _("unknown")
+        state = screen.desired_power_state()
+        icon = _power_state_icon(state)
+        if screen.power_override:
+            return format_html("{} ({})", icon, _("overridden"))
+        next_change = screen.next_scheduled_power_change()
+        if next_change is None:
+            return icon
+        next_at, _next_state = next_change
+        next_change_display = display_for_value(next_at, _("unknown"))
+        return format_html(
+            "{} ({})",
+            icon,
+            _("next change: %(next_change)s")
+            % {"next_change": next_change_display},
+        )
+
+    @admin.display(description=_("reported power state"))
+    @options(desc=_("Last power state reported by kiosk agent"))
+    def reported_power_state_display(self, screen):
+        icon = _power_state_icon(screen.reported_power_state)
+        if screen.reported_power_at is None:
+            return icon
+        reported_at = display_for_value(screen.reported_power_at, _("unknown"))
+        return format_html(
+            "{} ({})",
+            icon,
+            _("last reported at: %(reported_at)s")
+            % {"reported_at": reported_at},
+        )
 
     @admin.display(description=_("pending agent command"))
     @options(desc=_("Unacknowledged command waiting for agent"))
     def pending_agent_command_display(self, screen):
         command = screen.pending_command()
-        return command.command if command is not None else _("none")
+        if command is None:
+            return "-"
+        created_at = display_for_value(command.created_at, _("unknown"))
+        created_by = (
+            str(command.created_by)
+            if command.created_by is not None
+            else _("system")
+        )
+        return format_html(
+            "<code>{}</code> ({}, {})",
+            command.command,
+            _("created at: %(created_at)s") % {"created_at": created_at},
+            _("by: %(created_by)s") % {"created_by": created_by},
+        )
 
     @object_action
     @options(
@@ -246,10 +277,22 @@ class ScreenAdmin(ModelAdmin):
         desc=_("Queue one restart command for kiosk agent"),
     )
     def restart_agent_action(self, request, screen):
-        command = screen.request_agent_restart()
+        command = screen.request_agent_restart(created_by=request.user)
         messages.success(
             request,
             _("Agent restart command queued: %(id)s") % {"id": command.id},
+        )
+
+    @object_action
+    @options(
+        label=_("Clear pending commands"),
+        desc=_("Acknowledge all unacknowledged commands for this screen"),
+    )
+    def clear_pending_commands_action(self, request, screen):
+        count = screen.clear_pending_commands()
+        messages.success(
+            request,
+            _("Cleared %(count)d pending command(s).") % {"count": count},
         )
 
     @object_action

@@ -1,0 +1,3 @@
+from django_storage_url import dsn_configured_storage_class
+
+DefaultStorage = dsn_configured_storage_class("DEFAULT_STORAGE_DSN")

@@ -2,6 +2,7 @@ import secrets
 import uuid
 from decimal import Decimal
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import (
     FileExtensionValidator,
@@ -9,7 +10,8 @@ from django.core.validators import (
     MinValueValidator,
     RegexValidator,
 )
-from django.db import models
+from django.db import models, transaction
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -60,6 +62,46 @@ EVENT_CODE_VALIDATOR = RegexValidator(
     regex=r"^[a-z][a-z0-9_]{1,63}$",
     message=_("Use lowercase letters, numbers, and underscores."),
 )
+
+
+def _schedule_occurrence(schedule, current, direction):
+    dtstart = None
+    if schedule.dtstart is None:
+        dtstart = current.replace(year=1970, month=1, day=1)
+    try:
+        occurrence = getattr(schedule, direction)(
+            current, inc=True, dtstart=dtstart
+        )
+    except TypeError as exc:
+        try:
+            naive_current = timezone.make_naive(
+                current, timezone.get_current_timezone()
+            )
+            naive_dtstart = (
+                timezone.make_naive(dtstart, timezone.get_current_timezone())
+                if dtstart is not None
+                else None
+            )
+            occurrence = getattr(schedule, direction)(
+                naive_current,
+                inc=True,
+                dtstart=naive_dtstart,
+            )
+        except TypeError as fallback_exc:
+            raise exc from fallback_exc
+    if occurrence is not None and timezone.is_naive(occurrence):
+        occurrence = timezone.make_aware(
+            occurrence, timezone.get_current_timezone()
+        )
+    return occurrence
+
+
+def _schedule_before(schedule, current):
+    return _schedule_occurrence(schedule, current, "before")
+
+
+def _schedule_after(schedule, current):
+    return _schedule_occurrence(schedule, current, "after")
 
 
 def generate_public_token():
@@ -139,42 +181,88 @@ class Screen(models.Model):
     def __str__(self):
         return str(self.name)
 
+    def get_absolute_url(self):
+        return reverse(
+            "kiosks:screen-display",
+            kwargs={"token": self.public_token},
+        )
+
     def rotate_public_token(self):
         self.public_token = generate_public_token()
         self.save(update_fields=["public_token", "updated_at"])
 
     def scheduled_power_state(self, at=None):
         current = at or timezone.now()
+        if timezone.is_naive(current):
+            current = timezone.make_aware(
+                current, timezone.get_current_timezone()
+            )
         events = []
         for state, schedule in (
             (PowerState.ON, self.on_schedule),
             (PowerState.OFF, self.off_schedule),
         ):
             if schedule:
-                occurrence = schedule.before(current, inc=True)
+                occurrence = _schedule_before(schedule, current)
                 if occurrence is not None:
                     events.append((occurrence, state))
         if not events:
             return None
         return max(events, key=lambda event: event[0])[1]
 
+    def next_scheduled_power_change(self, at=None):
+        current = at or timezone.now()
+        if timezone.is_naive(current):
+            current = timezone.make_aware(
+                current, timezone.get_current_timezone()
+            )
+        current_state = self.scheduled_power_state(current)
+        if current_state == PowerState.ON:
+            next_state = PowerState.OFF
+            schedule = self.off_schedule
+        elif current_state == PowerState.OFF:
+            next_state = PowerState.ON
+            schedule = self.on_schedule
+        else:
+            return None
+        if not schedule:
+            return None
+        occurrence = _schedule_after(schedule, current)
+        if occurrence is None:
+            return None
+        return occurrence, next_state
+
     def desired_power_state(self, at=None):
-        return self.power_override or self.scheduled_power_state(at)
+        if self.power_override:
+            return self.power_override
+        scheduled = self.scheduled_power_state(at)
+        if scheduled is not None:
+            return scheduled
+        if not self.on_schedule and not self.off_schedule:
+            return PowerState.ON
+        return None
 
-    def pending_command(self):
-        return (
-            self.commands.filter(acknowledged_at__isnull=True)
-            .order_by("-created_at")
-            .first()
-        )
+    def pending_command(self, command=None):
+        commands = self.commands.filter(acknowledged_at__isnull=True)
+        if command is not None:
+            commands = commands.filter(command=command)
+        return commands.order_by("-created_at").first()
 
-    def request_agent_restart(self):
-        pending = self.pending_command()
-        if pending is not None:
-            return pending
-        return ScreenCommand.objects.create(
-            screen=self,
-            command=COMMAND_RESTART_AGENT,
+    def request_agent_restart(self, created_by=None):
+        with transaction.atomic():
+            screen = type(self).objects.select_for_update().get(pk=self.pk)
+            pending = screen.pending_command(COMMAND_RESTART_AGENT)
+            if pending is not None:
+                return pending
+            return ScreenCommand.objects.create(
+                screen=screen,
+                command=COMMAND_RESTART_AGENT,
+                created_by=created_by,
+            )
+
+    def clear_pending_commands(self, acknowledged_at=None):
+        return self.commands.filter(acknowledged_at__isnull=True).update(
+            acknowledged_at=acknowledged_at or timezone.now()
         )
 
 
@@ -196,6 +284,14 @@ class ScreenCommand(models.Model):
         max_length=32,
         choices=ScreenCommandChoice.choices,
     )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("created by"),
+        related_name="kiosk_screen_commands",
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL,
+    )
     created_at = models.DateTimeField(_("created at"), auto_now_add=True)
     acknowledged_at = models.DateTimeField(
         _("acknowledged at"),
@@ -207,12 +303,24 @@ class ScreenCommand(models.Model):
         ordering = ["-created_at", "id"]
         verbose_name = _("screen command")
         verbose_name_plural = _("screen commands")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["screen", "command"],
+                condition=models.Q(acknowledged_at__isnull=True),
+                name="kiosks_pending_command_unique",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.screen} · {self.command} · {self.id}"
 
 
 class Content(models.Model):
+    label = models.CharField(
+        _("label"),
+        max_length=200,
+        default="",
+    )
     url = models.URLField(
         _("URL"),
         max_length=2048,
@@ -289,7 +397,9 @@ class Content(models.Model):
         ]
 
     def __str__(self):
-        return self.url or self.html_file.name or _("HTML content")
+        return (
+            self.label or self.url or self.html_file.name or _("HTML content")
+        )
 
     def clean(self):
         super().clean()

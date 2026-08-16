@@ -112,7 +112,7 @@ def test_screen_config_api_returns_power_status(client):
 
     payload = response.json()
     assert payload["power_override"] is None
-    assert payload["desired_power_state"] is None
+    assert payload["desired_power_state"] == "on"
     assert payload["reported_power_state"] == "unknown"
     assert payload["reported_power_at"] is None
     assert payload["pending_command"] is None

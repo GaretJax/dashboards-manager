@@ -41,6 +41,7 @@ jobs:
       DJANGO_ALLOWED_HOSTS: localhost
       DEFAULT_DATABASE_DSN: >-
         postgresql://kiosk_manager:kiosk_manager@localhost:5432/kiosk_manager
+      DEFAULT_STORAGE_DSN: file:///tmp/media?url=/media/
 
     steps:
       - name: Check out repository
@@ -72,6 +73,7 @@ jobs:
             -e COVERAGE_CORE=ctrace \
             -e DJANGO_ALLOWED_HOSTS=localhost \
             -e DEFAULT_DATABASE_DSN="$DEFAULT_DATABASE_DSN" \
+            -e DEFAULT_STORAGE_DSN="$DEFAULT_STORAGE_DSN" \
             dashboards-manager:ci
 
   docker:
