@@ -31,6 +31,13 @@ from .services import (
 )
 
 router = Router(tags=["screens"])
+
+
+def _configuration_content_url(request, screen, content):
+    url = content_url(screen, content)
+    return request.build_absolute_uri(url) if url.startswith("/") else url
+
+
 EVENT_DETAIL_KEYS = {
     "browser_target",
     "current_version",
@@ -366,7 +373,9 @@ def get_screen_config(request, token: str, response: HttpResponse):
         "items": [
             {
                 "content_id": entry.content_id,
-                "url": content_url(screen, entry.content),
+                "url": _configuration_content_url(
+                    request, screen, entry.content
+                ),
                 "duration_seconds": entry.duration_seconds,
                 "order": entry.order,
                 "preload_delay_seconds": effective_preload_delay_seconds(

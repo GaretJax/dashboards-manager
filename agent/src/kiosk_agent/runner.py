@@ -128,9 +128,19 @@ class AgentRunner:
             preload_key = self._preload_key(config, current_position)
             if preload_key in pending:
                 pending.remove(preload_key)
-                self._activate_with_recovery(item, preload_key)
+                loaded = self._activate_with_recovery(item, preload_key)
             else:
-                self._navigate_with_recovery(item)
+                loaded = self._navigate_with_recovery(item)
+            if not loaded:
+                LOGGER.warning(
+                    "skipping content after navigation failure: %s",
+                    item.url,
+                )
+                current_index += 1
+                current_position += 1
+                if current_index >= len(config.items):
+                    current_index = 0
+                continue
             display_started = time.monotonic()
             deadline = display_started + item.duration_seconds
             changed = False
@@ -488,16 +498,16 @@ class AgentRunner:
             LOGGER.warning("configuration poll failed: %s", exc)
             return previous
 
-    def _activate_with_recovery(self, item: PlaylistItem, key: str):
+    def _activate_with_recovery(self, item: PlaylistItem, key: str) -> bool:
         try:
             self.browser.activate_preload(key)
             self._record_page_result(item)
-            return
+            return True
         except BrowserError as exc:
             LOGGER.warning("preloaded navigation failed: %s", exc)
-        self._navigate_with_recovery(item)
+        return self._navigate_with_recovery(item)
 
-    def _navigate_with_recovery(self, item: PlaylistItem):
+    def _navigate_with_recovery(self, item: PlaylistItem) -> bool:
         content_id = item.content_id or None
         self.telemetry.emit(
             "loading",
@@ -516,7 +526,7 @@ class AgentRunner:
                 injected_javascript_after=item.injected_javascript_after,
             )
             self._record_page_result(item)
-            return
+            return True
         except BrowserError as exc:
             self.telemetry.emit(
                 "navigation_failed",
@@ -529,19 +539,18 @@ class AgentRunner:
             LOGGER.warning("browser navigation failed: %s", exc)
 
         self.browser.close()
-        while True:
-            try:
-                self.browser.start()
-                self.browser.navigate(
-                    item.url,
-                    preload_delay_seconds=item.preload_delay_seconds,
-                    preload_timeout_seconds=item.preload_timeout_seconds,
-                    injected_css=item.injected_css,
-                    injected_javascript_before=item.injected_javascript_before,
-                    injected_javascript_after=item.injected_javascript_after,
-                )
-                self._record_page_result(item)
-                return
-            except BrowserError as exc:
-                LOGGER.warning("browser recovery failed: %s", exc)
-                time.sleep(5)
+        try:
+            self.browser.start()
+            self.browser.navigate(
+                item.url,
+                preload_delay_seconds=item.preload_delay_seconds,
+                preload_timeout_seconds=item.preload_timeout_seconds,
+                injected_css=item.injected_css,
+                injected_javascript_before=item.injected_javascript_before,
+                injected_javascript_after=item.injected_javascript_after,
+            )
+            self._record_page_result(item)
+            return True
+        except BrowserError as exc:
+            LOGGER.warning("browser recovery failed: %s", exc)
+            return False

@@ -4,6 +4,7 @@ import pytest
 
 from kiosk_agent import __version__
 from kiosk_agent.api import PendingCommand, PlaylistItem, ScreenConfig
+from kiosk_agent.browser import BrowserError
 from kiosk_agent.runner import AgentRestartRequested, AgentRunner
 from kiosk_agent.update import AgentUpdate
 
@@ -159,7 +160,7 @@ def test_navigation_always_preloads_with_numeric_delay():
     runner = AgentRunner(Mock(), browser)
     item = _item("https://example.test", 10, 7)
 
-    runner._navigate_with_recovery(  # pyright: ignore[reportPrivateUsage]
+    assert runner._navigate_with_recovery(  # pyright: ignore[reportPrivateUsage]
         item
     )
 
@@ -171,6 +172,43 @@ def test_navigation_always_preloads_with_numeric_delay():
         injected_javascript_before=None,
         injected_javascript_after=None,
     )
+
+
+def test_navigation_failure_attempts_recovery_then_returns_false():
+    browser = Mock()
+    browser.navigate.side_effect = BrowserError("invalid URL")
+    runner = AgentRunner(Mock(), browser)
+    item = _item("/screens/example", 10)
+
+    assert not runner._navigate_with_recovery(  # pyright: ignore[reportPrivateUsage]
+        item
+    )
+
+    assert browser.navigate.call_count == 2
+    browser.start.assert_called_once_with()
+
+
+def test_playlist_skips_failed_content_and_tries_next_item():
+    runner = AgentRunner(Mock(), Mock())
+    runner._maybe_update = Mock()  # pyright: ignore[reportPrivateUsage]
+    runner._sync_power = Mock()  # pyright: ignore[reportPrivateUsage]
+    runner._navigate_with_recovery = Mock(  # pyright: ignore[reportPrivateUsage]
+        side_effect=[False, RuntimeError("next item reached")]
+    )
+    config = ScreenConfig(
+        version="version",
+        items=(
+            _item("https://bad.example", 10),
+            _item("https://next.example", 10),
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="next item reached"):
+        runner._run_playlist(config)  # pyright: ignore[reportPrivateUsage]
+
+    calls = runner._navigate_with_recovery.call_args_list  # pyright: ignore[reportPrivateUsage]
+    assert calls[0].args[0].url == "https://bad.example"
+    assert calls[1].args[0].url == "https://next.example"
 
 
 def test_remote_power_state_sends_on_command_once():

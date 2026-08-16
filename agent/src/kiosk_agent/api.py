@@ -1,7 +1,7 @@
 import logging
 import math
 import threading
-from urllib.parse import quote
+from urllib.parse import quote, urljoin
 
 import httpx
 from attrs import define
@@ -188,7 +188,7 @@ class ManagerClient:
                 raise TypeError
             items = tuple(
                 PlaylistItem(
-                    str(item["url"]),
+                    urljoin(f"{self.manager_url}/", str(item["url"])),
                     float(item["duration_seconds"]),
                     int(item["order"]),
                     _parse_preload_delay_seconds(

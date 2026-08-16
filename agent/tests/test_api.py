@@ -140,6 +140,32 @@ def test_manager_client_fetches_and_orders_playlist(fake_client, caplog):
     assert fake_client.closed is True
 
 
+def test_manager_client_resolves_relative_content_urls(monkeypatch):
+    fake = FakeClient(
+        FakeResponse(
+            {
+                "version": "abc",
+                "items": [
+                    {
+                        "url": "/screens/token/contents/3/",
+                        "duration_seconds": 10,
+                        "order": 1,
+                    }
+                ],
+            }
+        )
+    )
+    monkeypatch.setattr(api.httpx, "Client", lambda timeout: fake)
+    client = ManagerClient("https://manager.example", "token")
+
+    config = client.fetch_config()
+
+    assert config.items[0].url == (
+        "https://manager.example/screens/token/contents/3/"
+    )
+    client.close()
+
+
 def test_manager_client_checks_wheel_redirect(monkeypatch):
     fake = RedirectClient("/downloads/kiosk_agent-0.1.2-py3-none-any.whl")
     monkeypatch.setattr(api.httpx, "Client", lambda timeout: fake)

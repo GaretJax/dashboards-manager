@@ -244,8 +244,9 @@ def test_screen_config_api_returns_internal_url_for_html_content(
     response = client.get(f"/api/screens/{screen.public_token}/config")
 
     assert response.status_code == 200
+    internal_path = f"/screens/{screen.public_token}/contents/{content.pk}/"
     assert response.json()["items"][0]["url"] == (
-        f"/screens/{screen.public_token}/contents/{content.pk}/"
+        response.wsgi_request.build_absolute_uri(internal_path)
     )
 
 
@@ -285,8 +286,9 @@ def test_media_content_uses_same_config_endpoint(client, settings, tmp_path):
     response = client.get(f"/api/screens/{screen.public_token}/config")
 
     assert response.status_code == 200
+    internal_path = f"/screens/{screen.public_token}/contents/{content.pk}/"
     assert response.json()["items"][0]["url"] == (
-        f"/screens/{screen.public_token}/contents/{content.pk}/"
+        response.wsgi_request.build_absolute_uri(internal_path)
     )
 
 
