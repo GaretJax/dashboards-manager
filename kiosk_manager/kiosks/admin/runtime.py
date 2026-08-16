@@ -75,7 +75,7 @@ class RecentEventInlineFormSet(BaseInlineFormSet):
         self.queryset = self.queryset.order_by("-received_at", "-pk")[:5]
 
 
-class EventInline(admin.TabularInline):
+class RecentEventInline(admin.TabularInline):
     model = Event
     formset = RecentEventInlineFormSet
     extra = 0
@@ -88,14 +88,11 @@ class EventInline(admin.TabularInline):
         "message",
         "url",
         "occurred_at",
-        "received_at",
-        "fingerprint",
-        "details",
     ]
     readonly_fields = fields
     ordering = ["-received_at", "-pk"]
-    verbose_name = _("event")
-    verbose_name_plural = _("events")
+    verbose_name = _("recent event")
+    verbose_name_plural = _("recent events")
 
     @admin.display(description=_("level"))
     def level_display(self, event):

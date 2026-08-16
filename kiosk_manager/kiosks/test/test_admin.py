@@ -10,7 +10,7 @@ from django.utils import timezone
 
 import pytest
 
-from kiosk_manager.kiosks.admin.runtime import EventAdmin, EventInline
+from kiosk_manager.kiosks.admin.runtime import EventAdmin, RecentEventInline
 from kiosk_manager.kiosks.admin.screen import ScreenAdmin, ScreenContentInline
 from kiosk_manager.kiosks.forms import ContentAdminForm, ScreenAdminForm
 from kiosk_manager.kiosks.models import (
@@ -205,11 +205,20 @@ def test_admin_uses_iso_date_formats():
     assert display_for_value(date(2026, 1, 2), "unknown") == "2026-01-02"
 
 
-def test_event_inline_is_readonly():
-    assert EventInline.readonly_fields == EventInline.fields
-    assert not EventInline.has_add_permission(None, None)
-    assert not EventInline.has_change_permission(None, None)
-    assert not EventInline.has_delete_permission(None, None)
+def test_recent_event_inline_is_readonly():
+    assert RecentEventInline.fields == [
+        "level_display",
+        "code",
+        "content",
+        "message",
+        "url",
+        "occurred_at",
+    ]
+    assert RecentEventInline.readonly_fields == RecentEventInline.fields
+    assert not RecentEventInline.has_add_permission(None, None)
+    assert not RecentEventInline.has_change_permission(None, None)
+    assert not RecentEventInline.has_delete_permission(None, None)
+    assert RecentEventInline.verbose_name_plural == "recent events"
 
 
 @pytest.mark.django_db
@@ -225,7 +234,7 @@ def test_event_inline_limits_recent_events():
         ).pk
         for index in range(6)
     ]
-    inline = EventInline(Screen, admin.site)
+    inline = RecentEventInline(Screen, admin.site)
     formset = inline.get_formset(None, screen)(instance=screen)
 
     assert [form.instance.pk for form in formset.forms] == list(

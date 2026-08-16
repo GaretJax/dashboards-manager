@@ -459,9 +459,7 @@ def test_screenshot_api_keeps_newest_screen_content_image(
     )
     assert response.json() == {"stored": False}
 
-    screen_content = ScreenContent.objects.get(
-        screen=screen, content=content
-    )
+    screen_content = ScreenContent.objects.get(screen=screen, content=content)
     assert screen_content.screenshot_health_state == "healthy"
     assert screen_content.screenshot_image.read() == png
 

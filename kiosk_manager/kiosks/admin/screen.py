@@ -17,7 +17,7 @@ from ..models import (
     PowerState,
     ScreenContent,
 )
-from .runtime import EventInline
+from .runtime import RecentEventInline
 
 
 def _runtime_status(screen):
@@ -127,10 +127,10 @@ class ScreenContentInline(admin.TabularInline):
             return "-"
         health_state = screen_content.screenshot_health_state
         health_error = screen_content.screenshot_error_summary
-        health_issue = (
-            health_state in {HealthState.DEGRADED, HealthState.ERROR}
-            or bool(health_error)
-        )
+        health_issue = health_state in {
+            HealthState.DEGRADED,
+            HealthState.ERROR,
+        } or bool(health_error)
         lines = [
             display_for_value(not health_issue, _("unknown"), boolean=True),
         ]
@@ -283,7 +283,7 @@ class ScreenAdmin(ModelAdmin):
     ]
     ordering = ["name", "pk"]
     date_hierarchy = "created_at"
-    inlines = [ScreenContentInline, EventInline]
+    inlines = [ScreenContentInline, RecentEventInline]
     change_actions = [
         "screen_on_action",
         "screen_off_action",
