@@ -395,6 +395,37 @@ class BrowserController:
             {"enabled": True},
         )
 
+    @staticmethod
+    def _css_injection_script(injected_css: str) -> str:
+        return (
+            "(() => {"
+            f"const css = {json.dumps(injected_css)};"
+            "const id = 'kiosk-agent-injected-css';"
+            "const install = () => {"
+            "const root = document.head || document.documentElement;"
+            "if (!root) return false;"
+            "let style = document.getElementById(id);"
+            "if (!style) {"
+            "style = document.createElement('style');"
+            "style.id = id;"
+            "root.appendChild(style);"
+            "}"
+            "style.textContent = css;"
+            "return true;"
+            "};"
+            "if (!install()) {"
+            "const observer = new MutationObserver(() => {"
+            "if (install()) observer.disconnect();"
+            "});"
+            "observer.observe(document, {childList: true, subtree: true});"
+            "}"
+            "})()"
+        )
+
+    @staticmethod
+    def _is_cdp_method_not_found(exc: BrowserError) -> bool:
+        return "-32601" in str(exc) or "Method not found" in str(exc)
+
     def _install_injections(
         self,
         socket: websocket.WebSocket,
@@ -410,7 +441,30 @@ class BrowserController:
                     {"source": injected_css},
                 )
             except BrowserError as exc:
-                LOGGER.warning("CSS injection installation failed: %s", exc)
+                if self._is_cdp_method_not_found(exc):
+                    LOGGER.debug(
+                        "browser lacks Page.addStyleToEvaluateOnNewDocument; "
+                        "using script fallback"
+                    )
+                    try:
+                        self._send_socket_command(
+                            socket,
+                            "Page.addScriptToEvaluateOnNewDocument",
+                            {
+                                "source": self._css_injection_script(
+                                    injected_css
+                                )
+                            },
+                        )
+                    except BrowserError as fallback_exc:
+                        LOGGER.warning(
+                            "CSS injection installation failed: %s",
+                            fallback_exc,
+                        )
+                else:
+                    LOGGER.warning(
+                        "CSS injection installation failed: %s", exc
+                    )
 
         if not injected_javascript_before and not injected_javascript_after:
             return

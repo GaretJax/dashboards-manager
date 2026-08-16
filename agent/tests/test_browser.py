@@ -4,7 +4,7 @@ import time
 from unittest.mock import Mock
 
 import kiosk_agent.browser as browser_module
-from kiosk_agent.browser import BrowserController
+from kiosk_agent.browser import BrowserController, BrowserError
 
 
 def _launch_args(monkeypatch, environment, profile_dir):
@@ -139,6 +139,45 @@ def test_content_injections_install_before_navigation(monkeypatch, tmp_path):
     assert "window.afterRan = true;" in script
     assert "javascript_before" in script
     assert "javascript_after" in script
+
+
+def test_css_injection_uses_script_fallback_for_unsupported_cdp(
+    monkeypatch, caplog, tmp_path
+):
+    controller = BrowserController(
+        browser="chromium",
+        cdp_url="http://127.0.0.1:9222",
+        profile_dir=tmp_path,
+    )
+    calls = []
+
+    def send_command(_controller, _socket, method, params=None):
+        calls.append((method, params))
+        if method == "Page.addStyleToEvaluateOnNewDocument":
+            raise BrowserError(
+                "{'code': -32601, 'message': 'Method not found'}"
+            )
+
+    monkeypatch.setattr(
+        BrowserController,
+        "_send_socket_command",
+        send_command,
+    )
+
+    caplog.set_level(logging.DEBUG, logger="kiosk_agent.browser")
+    controller._install_injections(  # pyright: ignore[reportPrivateUsage]
+        Mock(),
+        "body { color: red; }",
+        None,
+        None,
+    )
+
+    assert [method for method, _params in calls] == [
+        "Page.addStyleToEvaluateOnNewDocument",
+        "Page.addScriptToEvaluateOnNewDocument",
+    ]
+    assert "body { color: red; }" in calls[1][1]["source"]
+    assert "CSS injection installation failed" not in caplog.text
 
 
 def test_current_css_is_applied_to_loaded_document(monkeypatch, tmp_path):

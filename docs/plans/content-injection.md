@@ -35,8 +35,10 @@ injection.
 Carry an immutable injection bundle with each playlist item and preload job.
 Every target gets its bundle installed before `Page.navigate`:
 
-1. CSS uses `Page.addStyleToEvaluateOnNewDocument`. Chromium reapplies this
-   style automatically on each document navigation/reload in that target.
+1. CSS uses `Page.addStyleToEvaluateOnNewDocument` when supported. Older
+   Chromium falls back to an equivalent `Page.addScriptToEvaluateOnNewDocument`
+   style installer. Chromium reapplies this style automatically on each
+   document navigation/reload in that target.
 2. Before-phase JavaScript uses
    `Page.addScriptToEvaluateOnNewDocument`, so it executes before page scripts
    for every document.
