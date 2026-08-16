@@ -9,6 +9,7 @@ x-app: &app
     - .:/app:rw
     - ./.artifacts/staticfiles:/app/staticfiles:rw
     - ./.artifacts/media:/app/media:rw
+    - ./.artifacts:/data:rw
     - virtualenv:/app/.venv
     - uv-cache:/root/.cache/uv
     - agent-dist:/app/agent-dist:ro

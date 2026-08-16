@@ -353,6 +353,21 @@ def test_video_content_endpoint_renders_muted_autoplay_player(
 
 
 @pytest.mark.django_db
+def test_local_media_file_is_served(client):
+    content = Content.objects.create(
+        media=SimpleUploadedFile("dashboard.png", b"image")
+    )
+    try:
+        response = client.get(content.media.url)
+        body = b"".join(response.streaming_content)
+    finally:
+        content.delete()
+
+    assert response.status_code == 200
+    assert body == b"image"
+
+
+@pytest.mark.django_db
 def test_html_content_endpoint_hides_disabled_screen(
     client, settings, tmp_path
 ):
