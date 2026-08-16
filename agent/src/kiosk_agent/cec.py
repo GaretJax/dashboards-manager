@@ -1,11 +1,9 @@
 import re
 import shutil
 import subprocess
-from datetime import UTC, datetime
 from pathlib import Path
 
-from attrs import define, field
-from dateutil.rrule import rrulestr
+from attrs import define
 
 CEC_CLIENT = "cec-client"
 CEC_ON = "on 0"
@@ -86,40 +84,3 @@ class CecController:
             input_text=f"{command}\n",
             command=self.command,
         )
-
-
-@define(frozen=True, slots=True)
-class PowerSchedule:
-    on_schedule: str | None = None
-    off_schedule: str | None = None
-    _on_rule: object | None = field(init=False, default=None)
-    _off_rule: object | None = field(init=False, default=None)
-
-    def __attrs_post_init__(self):
-        object.__setattr__(self, "_on_rule", _parse_rule(self.on_schedule))
-        object.__setattr__(self, "_off_rule", _parse_rule(self.off_schedule))
-
-    def desired_state(self, now: datetime | None = None) -> str | None:
-        current = now or datetime.now(UTC)
-        events = []
-        for state, rule in (
-            ("on", self._on_rule),
-            ("standby", self._off_rule),
-        ):
-            if rule is None:
-                continue
-            occurrence = rule.before(current, inc=True)
-            if occurrence is not None:
-                events.append((occurrence, state))
-        if not events:
-            return None
-        return max(events, key=lambda event: event[0])[1]
-
-
-def _parse_rule(value: str | None):
-    if not value:
-        return None
-    try:
-        return rrulestr(value, forceset=True)
-    except (TypeError, ValueError, OverflowError) as exc:
-        raise ValueError("invalid power schedule RRULE") from exc

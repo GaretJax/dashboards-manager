@@ -56,13 +56,15 @@ added. Extend existing screen configuration response with:
 
 ```json
 {
-  "power_override": "on" | "off" | null,
   "desired_power_state": "on" | "off" | null,
   "reported_power_state": "on" | "off" | "unknown" | null,
   "reported_power_at": "..." | null,
   "pending_command": {"id": "uuid", "command": "restart_agent"} | null
 }
 ```
+
+Manager keeps schedules and overrides internal; agent receives desired state
+only and does not need timezone or RRULE data.
 
 Add only an agent state-report endpoint, using existing screen public token as
 agent credential:
@@ -92,7 +94,7 @@ fields. Existing schedule and preload fieldsets remain unchanged.
 - Extend `ManagerClient` parsing with power state and pending command data.
 - Add `ManagerClient.report_state()` for the state endpoint.
 - Replace process-local schedule-only decision with server-provided desired state;
-  retain local RRULE parsing only if needed as a validation/fallback path.
+  do not expose or parse manager RRULE schedules on agent.
 - On every startup and after every config poll:
   - apply desired `on`/`off` through `CecController` if it differs from the
     agent's last successfully reported state;

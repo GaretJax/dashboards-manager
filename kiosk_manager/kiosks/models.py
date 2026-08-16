@@ -125,6 +125,13 @@ EVENT_CODE_VALIDATOR = RegexValidator(
 )
 
 
+def _schedule_current(at=None):
+    current = at or timezone.now()
+    if timezone.is_naive(current):
+        current = timezone.make_aware(current, timezone.get_current_timezone())
+    return timezone.localtime(current, timezone.get_current_timezone())
+
+
 def _schedule_occurrence(schedule, current, direction):
     dtstart = None
     if schedule.dtstart is None:
@@ -196,7 +203,7 @@ class Screen(models.Model):
         verbose_name=_("power-on schedule"),
         help_text=_(
             "Optional recurring times when screen should receive HDMI-CEC "
-            "on command. Times use the server timezone."
+            "on command. Times use the configured timezone."
         ),
     )
     off_schedule = RecurrenceField(
@@ -206,7 +213,7 @@ class Screen(models.Model):
         verbose_name=_("power-off schedule"),
         help_text=_(
             "Optional recurring times when screen should receive HDMI-CEC "
-            "standby command. Times use the server timezone."
+            "standby command. Times use the configured timezone."
         ),
     )
     power_override = models.CharField(
@@ -253,11 +260,7 @@ class Screen(models.Model):
         self.save(update_fields=["public_token", "updated_at"])
 
     def scheduled_power_state(self, at=None):
-        current = at or timezone.now()
-        if timezone.is_naive(current):
-            current = timezone.make_aware(
-                current, timezone.get_current_timezone()
-            )
+        current = _schedule_current(at)
         events = []
         for state, schedule in (
             (PowerState.ON, self.on_schedule),
@@ -272,11 +275,7 @@ class Screen(models.Model):
         return max(events, key=lambda event: event[0])[1]
 
     def next_scheduled_power_change(self, at=None):
-        current = at or timezone.now()
-        if timezone.is_naive(current):
-            current = timezone.make_aware(
-                current, timezone.get_current_timezone()
-            )
+        current = _schedule_current(at)
         current_state = self.scheduled_power_state(current)
         if current_state == PowerState.ON:
             next_state = PowerState.OFF

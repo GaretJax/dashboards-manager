@@ -115,6 +115,9 @@ def test_screen_admin_schedule_widget_includes_time_control():
         "ScheduleRecurrenceWidget"
     )
     assert "kiosks/recurrence-time.js" in "".join(form.media.render_js())
+    assert (
+        'data-timezone="America/New_York"' in form["on_schedule"].as_widget()
+    )
 
 
 def test_screen_admin_power_states_use_boolean_icons_and_override_label():

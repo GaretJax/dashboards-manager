@@ -3,6 +3,10 @@
         return String(value).padStart(2, "0");
     }
 
+    function timezoneValue(ruleForm) {
+        return ruleForm.panel.widget.textarea.getAttribute("data-timezone");
+    }
+
     function timeValue(ruleForm) {
         var rule = ruleForm.freq_rules[ruleForm.selected_freq];
         if (rule.byhour && rule.byhour.length) {
@@ -45,10 +49,15 @@
         var container = recurrence.widget.e("div", {
             class: "recurrence-time-control",
         });
+        var timezone = timezoneValue(ruleForm);
+        var labelText = recurrence.display.labels.time + ":";
+        if (timezone) {
+            labelText += " (" + timezone + ")";
+        }
         var label = recurrence.widget.e(
             "label",
             { class: "recurrence-label" },
-            recurrence.display.labels.time + ":",
+            labelText,
         );
         var input = recurrence.widget.e("input", {
             class: "recurrence-time-input",
@@ -69,7 +78,11 @@
     recurrence.widget.RuleForm.prototype.get_display_text = function (short) {
         var text = originalGetDisplayText.call(this, short);
         var time = timeValue(this);
-        return time ? text + " (" + time + ")" : text;
+        var timezone = timezoneValue(this);
+        if (!time) {
+            return text;
+        }
+        return text + " (" + time + (timezone ? " " + timezone : "") + ")";
     };
 
     var originalInit = recurrence.widget.RuleForm.prototype.init;

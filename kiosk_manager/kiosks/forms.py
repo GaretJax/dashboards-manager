@@ -104,6 +104,11 @@ class ContentAdminForm(forms.ModelForm):
 
 
 class ScheduleRecurrenceWidget(RecurrenceWidget):
+    def get_context(self, name, value, attrs):
+        context = super().get_context(name, value, attrs)
+        context["widget"]["attrs"]["data-timezone"] = settings.TIME_ZONE
+        return context
+
     def get_media(self):
         extra = "" if settings.DEBUG else ".min"
         js = [

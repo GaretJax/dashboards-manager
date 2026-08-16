@@ -1,10 +1,20 @@
 import hashlib
 import json
+from datetime import UTC, datetime
 from typing import cast
 
 from django.conf import settings
+from django.utils import timezone
 
 from .models import Content, Screen, ScreenContent
+
+
+def utc_datetime(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if timezone.is_naive(value):
+        value = timezone.make_aware(value)
+    return value.astimezone(UTC)
 
 
 def effective_preload_delay_seconds(content: Content) -> float:
@@ -35,10 +45,9 @@ def serialize_schedule(schedule) -> str | None:
 def power_status(screen: Screen) -> dict:
     pending = screen.pending_command()
     return {
-        "power_override": screen.power_override or None,
         "desired_power_state": screen.desired_power_state(),
         "reported_power_state": screen.reported_power_state,
-        "reported_power_at": screen.reported_power_at,
+        "reported_power_at": utc_datetime(screen.reported_power_at),
         "pending_command": (
             {"id": pending.id, "command": pending.command}
             if pending is not None

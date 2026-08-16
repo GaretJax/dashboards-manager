@@ -108,7 +108,7 @@ kiosk-agent service install \
   (defaults: 60 and 300 seconds). Use `--log-level DEBUG|INFO|WARNING|ERROR|CRITICAL` or
   `KIOSK_AGENT_LOG_LEVEL` to control verbosity. The selected level is stored
   in generated systemd units. HTTPX request lines are DEBUG-level.
-- `config` prints current playlist, preload, and power configuration.
+- `config` prints current playlist, preload, and desired power state.
 - `bootstrap` interactively configures display/CEC, writes config, installs the
   user service, and validates startup. Use `--non-interactive` only with
   unambiguous host defaults.
@@ -154,7 +154,7 @@ wheel metadata, install newer versions through uv, refresh their unit, and
 restart. Update failures do not stop playback; installation/restart events are
 reported to Manager.
 
-## HDMI-CEC power schedules
+## HDMI-CEC power control
 
 Pass CEC adapter path with `--cec-port`:
 
@@ -167,9 +167,9 @@ kiosk-agent cec detect
 kiosk-agent doctor --cec-port /dev/cec0
 ```
 
-Screen power-on and power-off schedules use RRULE fields. Agent sends
-`on 0` and `standby 0` through `cec-client` when latest schedule occurrence
-changes state.
+Manager evaluates screen power schedules in configured timezone and sends
+agent desired power state. Agent sends `on 0` or `standby 0` through
+`cec-client` when desired state changes.
 
 Background tabs can fail for dashboards that defer rendering while
 `document.visibilityState` is `hidden`; focus emulation and Chromium flags

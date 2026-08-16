@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
@@ -80,8 +81,9 @@ def test_screen_config_api_returns_ordered_content(client):
     assert response["Cache-Control"] == "no-store, no-cache, must-revalidate"
     payload = response.json()
     assert payload["version"]
-    assert payload["on_schedule"] is None
-    assert payload["off_schedule"] is None
+    assert "timezone" not in payload
+    assert "on_schedule" not in payload
+    assert "off_schedule" not in payload
     assert payload["items"] == [
         {
             "content_id": first.pk,
@@ -115,7 +117,7 @@ def test_screen_config_api_returns_power_status(client):
     response = client.get(f"/api/screens/{screen.public_token}/config")
 
     payload = response.json()
-    assert payload["power_override"] is None
+    assert "power_override" not in payload
     assert payload["desired_power_state"] == "on"
     assert payload["reported_power_state"] == "unknown"
     assert payload["reported_power_at"] is None
@@ -142,28 +144,31 @@ def test_screen_state_api_updates_report_and_acknowledges_restart(client):
     payload = response.json()
     assert payload["reported_power_state"] == "on"
     assert payload["reported_power_at"]
+    assert (
+        datetime.fromisoformat(
+            payload["reported_power_at"].replace("Z", "+00:00")
+        ).tzinfo
+        == UTC
+    )
     assert payload["pending_command"] is None
     command.refresh_from_db()
     assert command.acknowledged_at is not None
 
 
 @pytest.mark.django_db
-def test_screen_config_api_returns_power_schedules(client):
+def test_screen_config_api_hides_schedule_and_override(client):
     screen = Screen.objects.create(
         name="Lobby",
-        on_schedule="DTSTART:20260101T080000Z\nRRULE:FREQ=DAILY",
-        off_schedule="DTSTART:20260101T220000Z\nRRULE:FREQ=DAILY",
+        on_schedule="DTSTART:20260101T080000\nRRULE:FREQ=DAILY",
+        off_schedule="DTSTART:20260101T220000\nRRULE:FREQ=DAILY",
     )
 
     response = client.get(f"/api/screens/{screen.public_token}/config")
 
     payload = response.json()
-    assert payload["on_schedule"] == (
-        "DTSTART:20260101T080000Z\nRRULE:FREQ=DAILY"
-    )
-    assert payload["off_schedule"] == (
-        "DTSTART:20260101T220000Z\nRRULE:FREQ=DAILY"
-    )
+    assert "timezone" not in payload
+    assert "on_schedule" not in payload
+    assert "off_schedule" not in payload
 
 
 @pytest.mark.django_db
@@ -394,6 +399,10 @@ def test_runtime_status_api_persists_latest_snapshot(client):
     )
 
     assert response.status_code == 200
+    response_timestamp = datetime.fromisoformat(
+        response.json()["last_check_in"].replace("Z", "+00:00")
+    )
+    assert response_timestamp.tzinfo == UTC
     status = ScreenRuntimeStatus.objects.get(screen=screen)
     assert status.agent_version == "1.2.3"
     assert status.current_content_id == content.pk

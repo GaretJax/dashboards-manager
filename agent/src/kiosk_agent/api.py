@@ -6,7 +6,6 @@ from urllib.parse import quote
 import httpx
 from attrs import define
 
-from .cec import PowerSchedule
 from .update import (
     MAX_WHEEL_SIZE,
     AgentUpdate,
@@ -24,7 +23,6 @@ class ManagerError(RuntimeError):
 DEFAULT_PRELOAD_DELAY_SECONDS = 0.0
 DEFAULT_PRELOAD_TIMEOUT_SECONDS = 30
 POWER_STATES = {"on", "off", "unknown"}
-POWER_OVERRIDES = {"on", "off"}
 RESTART_AGENT_COMMAND = "restart_agent"
 
 
@@ -51,9 +49,6 @@ class PendingCommand:
 class ScreenConfig:
     version: str
     items: tuple[PlaylistItem, ...]
-    on_schedule: str | None = None
-    off_schedule: str | None = None
-    power_override: str | None = None
     desired_power_state: str | None = None
     reported_power_state: str = "unknown"
     pending_command: PendingCommand | None = None
@@ -83,27 +78,10 @@ def _parse_preload_timeout_seconds(value) -> float:
     return seconds
 
 
-def _parse_schedule(value) -> str | None:
-    if value in (None, ""):
-        return None
-    if not isinstance(value, str):
-        raise ValueError
-    PowerSchedule(on_schedule=value)
-    return value
-
-
 def _parse_power_state(value, *, allow_none: bool = False) -> str | None:
     if value is None and allow_none:
         return None
     if not isinstance(value, str) or value not in POWER_STATES:
-        raise ValueError
-    return value
-
-
-def _parse_power_override(value) -> str | None:
-    if value in (None, ""):
-        return None
-    if not isinstance(value, str) or value not in POWER_OVERRIDES:
         raise ValueError
     return value
 
@@ -195,11 +173,6 @@ class ManagerClient:
                 raise TypeError
             version = payload["version"]
             raw_items = payload["items"]
-            on_schedule = _parse_schedule(payload.get("on_schedule"))
-            off_schedule = _parse_schedule(payload.get("off_schedule"))
-            power_override = _parse_power_override(
-                payload.get("power_override")
-            )
             desired_power_state = _parse_power_state(
                 payload.get("desired_power_state"), allow_none=True
             )
@@ -244,14 +217,13 @@ class ManagerClient:
             raise ManagerError("manager returned non-positive duration")
 
         config = ScreenConfig(
-            version,
-            tuple(sorted(items, key=lambda item: (item.order, item.url))),
-            on_schedule,
-            off_schedule,
-            power_override,
-            desired_power_state,
-            reported_power_state or "unknown",
-            pending_command,
+            version=version,
+            items=tuple(
+                sorted(items, key=lambda item: (item.order, item.url))
+            ),
+            desired_power_state=desired_power_state,
+            reported_power_state=reported_power_state or "unknown",
+            pending_command=pending_command,
         )
         LOGGER.info(
             "fetched config version=%s items=%d",

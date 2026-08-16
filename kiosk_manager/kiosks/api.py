@@ -28,7 +28,7 @@ from .services import (
     effective_preload_timeout_seconds,
     get_screen_configuration,
     power_status,
-    serialize_schedule,
+    utc_datetime,
 )
 
 router = Router(tags=["screens"])
@@ -65,7 +65,6 @@ class PendingCommandOutput(Schema):
 
 
 class PowerStatusOutput(Schema):
-    power_override: str | None
     desired_power_state: str | None
     reported_power_state: str
     reported_power_at: datetime | None
@@ -75,8 +74,6 @@ class PowerStatusOutput(Schema):
 class ScreenConfigurationOutput(PowerStatusOutput):
     version: str
     items: list[PlaylistItemOutput]
-    on_schedule: str | None
-    off_schedule: str | None
 
 
 class ScreenStateInput(Schema):
@@ -173,7 +170,7 @@ def report_runtime_status(
         defaults={
             "agent_version": payload.agent_version[:64],
             "browser_version": payload.browser_version[:256],
-            "agent_started_at": payload.agent_started_at,
+            "agent_started_at": utc_datetime(payload.agent_started_at),
             "uptime_seconds": payload.uptime_seconds,
             "last_check_in": check_in,
             "health_state": payload.health_state,
@@ -186,7 +183,9 @@ def report_runtime_status(
             "memory_available_bytes": payload.memory_available_bytes,
             "memory_percent": payload.memory_percent,
             "current_content": current_content,
-            "last_successful_page_load_at": payload.last_successful_page_load_at,
+            "last_successful_page_load_at": utc_datetime(
+                payload.last_successful_page_load_at
+            ),
             "desired_power_state": payload.desired_power_state or "",
             "actual_power_state": payload.actual_power_state or "",
             "display_identity": payload.display_identity[:128],
@@ -198,7 +197,7 @@ def report_runtime_status(
             "display_error": payload.display_error[:2000],
         },
     )
-    return {"last_check_in": status.last_check_in}
+    return {"last_check_in": utc_datetime(status.last_check_in)}
 
 
 @router.post("/screens/{token}/screenshots")
@@ -211,8 +210,7 @@ def upload_screenshot(request, token: str):
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise HttpError(400, "invalid screenshot metadata") from exc
-    if timezone.is_naive(captured_at):
-        captured_at = timezone.make_aware(captured_at)
+    captured_at = utc_datetime(captured_at)
     health_state = request.POST.get("health_state", "unknown")
     valid_health_states = set(HealthState.values)
     if health_state not in valid_health_states:
@@ -312,8 +310,7 @@ def report_events(request, token: str, payload: EventBatchInput):
                 (parts.scheme, netloc, parts.path, "", "")
             )[:2048]
         occurred_at = event.occurred_at or timezone.now()
-        if timezone.is_naive(occurred_at):
-            occurred_at = timezone.make_aware(occurred_at)
+        occurred_at = utc_datetime(occurred_at)
         rows.append(
             Event(
                 screen=screen,
@@ -345,8 +342,6 @@ def get_screen_config(request, token: str, response: HttpResponse):
     response["Cache-Control"] = "no-store, no-cache, must-revalidate"
     return {
         "version": version,
-        "on_schedule": serialize_schedule(screen.on_schedule),
-        "off_schedule": serialize_schedule(screen.off_schedule),
         **power_status(screen),
         "items": [
             {

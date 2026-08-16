@@ -670,8 +670,6 @@ def config_command(manager, screen_token, output_format):
             json.dumps(
                 {
                     "version": config.version,
-                    "on_schedule": config.on_schedule,
-                    "off_schedule": config.off_schedule,
                     "items": [
                         {
                             "content_id": item.content_id,
@@ -693,10 +691,6 @@ def config_command(manager, screen_token, output_format):
         return
 
     click.echo(f"Version: {config.version}")
-    if config.on_schedule:
-        click.echo(f"Power on: {config.on_schedule}")
-    if config.off_schedule:
-        click.echo(f"Power off: {config.off_schedule}")
     if not config.items:
         click.echo("Playlist is empty.")
         return

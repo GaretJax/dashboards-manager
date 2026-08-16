@@ -1,7 +1,9 @@
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.utils import timezone
 
 import pytest
 from recurrence import DAILY, Recurrence, Rule
@@ -207,6 +209,41 @@ def test_power_override_takes_precedence_over_schedule():
     screen.power_override = "on"
 
     assert screen.desired_power_state(at) == "on"
+
+
+@pytest.mark.django_db
+def test_schedule_uses_configured_timezone_for_wall_clock_time():
+    zone = ZoneInfo("America/New_York")
+    screen = Screen(
+        name="Lobby",
+        on_schedule="RRULE:FREQ=DAILY;BYHOUR=20;BYMINUTE=0;BYSECOND=0",
+        off_schedule="RRULE:FREQ=DAILY;BYHOUR=8;BYMINUTE=0;BYSECOND=0",
+    )
+
+    with timezone.override(zone):
+        before_eight_local = datetime(2026, 3, 8, 10, 30, tzinfo=UTC)
+        after_eight_local = datetime(2026, 3, 8, 12, 30, tzinfo=UTC)
+
+        assert screen.scheduled_power_state(before_eight_local) == "on"
+        assert screen.scheduled_power_state(after_eight_local) == "off"
+
+
+@pytest.mark.django_db
+def test_schedule_time_keeps_wall_clock_across_dst():
+    zone = ZoneInfo("America/New_York")
+    screen = Screen(
+        name="Lobby",
+        on_schedule="RRULE:FREQ=DAILY;BYHOUR=20;BYMINUTE=0;BYSECOND=0",
+        off_schedule="RRULE:FREQ=DAILY;BYHOUR=8;BYMINUTE=0;BYSECOND=0",
+    )
+    at = datetime(2026, 3, 8, 6, 30, tzinfo=UTC)
+
+    with timezone.override(zone):
+        next_at, next_state = screen.next_scheduled_power_change(at)
+
+    assert next_state == "off"
+    assert next_at == datetime(2026, 3, 8, 8, tzinfo=zone)
+    assert next_at.utcoffset().total_seconds() == -4 * 60 * 60
 
 
 @pytest.mark.django_db
