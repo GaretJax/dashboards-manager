@@ -213,7 +213,7 @@ def test_screen_admin_power_states_use_boolean_icons_and_override_label():
     assert "icon-yes.svg" in str(desired)
     assert "overridden" in str(desired)
     assert "icon-no.svg" in str(reported)
-    assert "last reported at:" in str(reported)
+    assert "last changed at:" in str(reported)
 
 
 @pytest.mark.django_db

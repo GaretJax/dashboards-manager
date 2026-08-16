@@ -302,7 +302,7 @@ class ScreenAdmin(ModelAdmin):
         return format_html(
             "{} ({})",
             icon,
-            _("last reported at: %(reported_at)s")
+            _("last changed at: %(reported_at)s")
             % {"reported_at": reported_at},
         )
 
