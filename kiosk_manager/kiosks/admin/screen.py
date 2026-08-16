@@ -108,9 +108,15 @@ class ScreenContentInline(admin.TabularInline):
     def screenshot_image_link(self, screen_content):
         if not screen_content or not screen_content.screenshot_image:
             return _("none")
+        image_url = screen_content.screenshot_image.url
         return format_html(
-            '<a href="{}" target="_blank">View screenshot</a>',
-            screen_content.screenshot_image.url,
+            '<a href="{}" target="_blank">'
+            '<img src="{}" alt="Screenshot" loading="lazy" '
+            'style="display: block; max-width: 164px; '
+            'max-height: 96px; object-fit: contain;">'
+            "</a>",
+            image_url,
+            image_url,
         )
 
     @admin.display(description=_("health"))

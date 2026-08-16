@@ -7,9 +7,15 @@ from django.utils import timezone
 
 import pytest
 
+from kiosk_manager.kiosks.admin.runtime import EventAdmin
 from kiosk_manager.kiosks.admin.screen import ScreenAdmin, ScreenContentInline
 from kiosk_manager.kiosks.forms import ContentAdminForm, ScreenAdminForm
-from kiosk_manager.kiosks.models import Screen, ScreenCommand, ScreenContent
+from kiosk_manager.kiosks.models import (
+    Event,
+    Screen,
+    ScreenCommand,
+    ScreenContent,
+)
 
 
 @pytest.mark.django_db
@@ -143,6 +149,37 @@ def test_screen_content_inline_health_uses_boolean_icon_and_details():
     assert "Health" not in healthy
     assert "icon-no.svg" in unhealthy
     assert "Health: capture failed" in unhealthy
+
+
+def test_screen_content_inline_shows_bounded_screenshot_thumbnail():
+    screen_content = ScreenContent(
+        screenshot_image=SimpleUploadedFile("shot.png", b"png")
+    )
+
+    thumbnail = str(
+        ScreenContentInline.screenshot_image_link(None, screen_content)
+    )
+
+    assert "<img" in thumbnail
+    assert "max-width: 164px" in thumbnail
+    assert "max-height: 96px" in thumbnail
+    assert "shot.png" in thumbnail
+
+
+def test_event_admin_uses_autocomplete_filters():
+    filter_parameters = [
+        filter_class.parameter_name
+        for filter_class in EventAdmin.list_filter[:2]
+    ]
+
+    assert filter_parameters == ["screen", "content"]
+
+
+def test_event_admin_colors_levels():
+    level = str(EventAdmin.level_display(None, Event(level="WARNING")))
+
+    assert "Warning" in level
+    assert "#d97706" in level
 
 
 @pytest.mark.django_db
