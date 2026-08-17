@@ -47,6 +47,7 @@ class RuntimeState:
 @define(slots=True)
 class _PendingScreenshot:
     content_id: int
+    order: int
     image: bytes
     captured_at: datetime
     health_state: str
@@ -73,7 +74,7 @@ class AgentTelemetry:
         self.events = AgentEventReporter(manager, minimum_level=event_level)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
-        self._pending: dict[int, _PendingScreenshot] = {}
+        self._pending: dict[tuple[int, int], _PendingScreenshot] = {}
         self._pending_lock = threading.RLock()
 
     def start(self):
@@ -98,16 +99,19 @@ class AgentTelemetry:
     def queue_screenshot(
         self,
         content_id: int,
+        order: int,
         image: bytes,
         captured_at: datetime,
         health_state: str,
         error_summary: str = "",
     ):
-        if content_id <= 0:
+        if content_id <= 0 or order <= 0:
             return
+        screenshot_key = (content_id, order)
         with self._pending_lock:
-            self._pending[content_id] = _PendingScreenshot(
+            self._pending[screenshot_key] = _PendingScreenshot(
                 content_id,
+                order,
                 image,
                 captured_at,
                 health_state,
@@ -160,13 +164,14 @@ class AgentTelemetry:
     def _upload_pending(self, now: float):
         with self._pending_lock:
             pending = tuple(self._pending.items())
-        for content_id, screenshot in pending:
+        for screenshot_key, screenshot in pending:
             if screenshot.retry_at > now:
                 continue
             try:
                 self.manager.upload_screenshot(
                     {
-                        "content_id": str(content_id),
+                        "content_id": str(screenshot.content_id),
+                        "order": str(screenshot.order),
                         "captured_at": screenshot.captured_at.isoformat().replace(
                             "+00:00", "Z"
                         ),
@@ -182,9 +187,9 @@ class AgentTelemetry:
                 )
                 continue
             with self._pending_lock:
-                current = self._pending.get(content_id)
+                current = self._pending.get(screenshot_key)
                 if current is screenshot:
-                    self._pending.pop(content_id, None)
+                    self._pending.pop(screenshot_key, None)
 
 
 def collect_host_metrics() -> dict:

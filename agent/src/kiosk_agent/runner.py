@@ -69,7 +69,7 @@ class AgentRunner:
             display_identity=display_identity,
             event_level=event_level,
         )
-        self._last_screenshot_at: dict[int, float] = {}
+        self._last_screenshot_at: dict[tuple[int, int], float] = {}
 
     def run(self):
         self.telemetry.start()
@@ -408,10 +408,11 @@ class AgentRunner:
 
     def _maybe_capture_screenshot(self, item: PlaylistItem):
         content_id = item.content_id
+        screenshot_key = (content_id, item.order)
         if content_id <= 0 or not self.browser.last_navigation_loaded:
             return
         now = time.monotonic()
-        previous = self._last_screenshot_at.get(content_id)
+        previous = self._last_screenshot_at.get(screenshot_key)
         if previous is not None and now - previous < self.screenshot_interval:
             return
         try:
@@ -424,10 +425,11 @@ class AgentRunner:
                 browser_error=str(exc),
             )
             return
-        self._last_screenshot_at[content_id] = now
+        self._last_screenshot_at[screenshot_key] = now
         snapshot = self.runtime_state.snapshot()
         self.telemetry.queue_screenshot(
             content_id,
+            item.order,
             image,
             datetime.now(UTC),
             snapshot.get("health_state", "unknown"),

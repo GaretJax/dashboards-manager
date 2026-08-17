@@ -147,7 +147,7 @@ Content may define CSS plus JavaScript before-page-scripts and after-load
 injections. Injection failures are logged without stopping playback. Native
 JavaScript dialogs are automatically handled so they cannot block the kiosk.
 The agent periodically reports host/display/browser health and uploads one
-latest in-memory diagnostic screenshot per content item at the configured
+latest in-memory diagnostic screenshot per playlist item at the configured
 interval; screenshots are not written locally. Persistent agents check
 `/downloads/kiosk-agent.whl` periodically, inspect its redirect filename, verify
 wheel metadata, install newer versions through uv, refresh their unit, and

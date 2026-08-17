@@ -435,14 +435,19 @@ def test_screenshot_api_keeps_newest_screen_content_image(
     settings.MEDIA_ROOT = tmp_path
     screen = Screen.objects.create(name="Lobby")
     content = Content.objects.create(url="https://example.com")
-    ScreenContent.objects.create(screen=screen, content=content, order=1)
-    ScreenContent.objects.create(screen=screen, content=content, order=2)
+    first_entry = ScreenContent.objects.create(
+        screen=screen, content=content, order=1
+    )
+    second_entry = ScreenContent.objects.create(
+        screen=screen, content=content, order=2
+    )
     png = b"\x89PNG\r\n\x1a\nfirst"
 
     response = client.post(
         f"/api/screens/{screen.public_token}/screenshots",
         data={
             "content_id": str(content.pk),
+            "order": "2",
             "captured_at": "2026-01-01T12:00:00Z",
             "health_state": "healthy",
             "image": SimpleUploadedFile(
@@ -457,6 +462,7 @@ def test_screenshot_api_keeps_newest_screen_content_image(
         f"/api/screens/{screen.public_token}/screenshots",
         data={
             "content_id": str(content.pk),
+            "order": "2",
             "captured_at": "2026-01-01T11:00:00Z",
             "health_state": "error",
             "image": SimpleUploadedFile(
@@ -466,12 +472,10 @@ def test_screenshot_api_keeps_newest_screen_content_image(
     )
     assert response.json() == {"stored": False}
 
-    screen_content = ScreenContent.objects.filter(
-        screen=screen, content=content
-    ).order_by("pk").first()
-    assert screen_content is not None
-    assert screen_content.screenshot_health_state == "healthy"
-    assert screen_content.screenshot_image.read() == png
+    second_entry.refresh_from_db()
+    assert first_entry.screenshot_captured_at is None
+    assert second_entry.screenshot_health_state == "healthy"
+    assert second_entry.screenshot_image.read() == png
 
 
 @pytest.mark.django_db

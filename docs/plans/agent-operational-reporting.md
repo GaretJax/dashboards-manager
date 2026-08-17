@@ -161,6 +161,7 @@ Add multipart endpoint:
 Fields:
 
 - `content_id`;
+- `order` (playlist position identifying the `ScreenContent` row);
 - `captured_at`;
 - `health_state`;
 - optional error summary;
@@ -179,8 +180,8 @@ No public screenshot listing endpoint is required.
 
 Add agent `screenshot_interval` config, default several minutes (recommended
 300 seconds), with a minimum value. Capture no more than once per interval per
-`(screen, content_id)` using a monotonic in-memory map. The interval is shared
-when same content appears multiple times in one playlist.
+`(screen, content_id, order)` using a monotonic in-memory map. Repeated content
+uses separate intervals and screenshot queues for each playlist position.
 
 Capture only the currently active content after a successful page load. Do not
 capture normal snapshots while navigation/preload is visibly loading. Allow a

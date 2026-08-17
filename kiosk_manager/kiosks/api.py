@@ -157,9 +157,7 @@ def report_runtime_status(
         current_content = None
     else:
         current_content = get_object_or_404(
-            Content.objects.filter(
-                playlist_entries__screen=screen
-            ).distinct(),
+            Content.objects.filter(playlist_entries__screen=screen).distinct(),
             pk=payload.current_content_id,
         )
 
@@ -218,6 +216,7 @@ def upload_screenshot(request, token: str):
     screen = get_object_or_404(Screen.objects.all(), public_token=token)
     try:
         content_id = int(request.POST["content_id"])
+        order = int(request.POST["order"])
         captured_at = datetime.fromisoformat(
             request.POST["captured_at"].replace("Z", "+00:00")
         )
@@ -228,9 +227,12 @@ def upload_screenshot(request, token: str):
     valid_health_states = set(HealthState.values)
     if health_state not in valid_health_states:
         raise HttpError(400, "invalid health_state")
-    content = get_object_or_404(
-        Content.objects.filter(playlist_entries__screen=screen).distinct(),
-        pk=content_id,
+    screen_content = get_object_or_404(
+        ScreenContent.objects.filter(
+            screen=screen,
+            content_id=content_id,
+            order=order,
+        )
     )
     image = request.FILES.get("image")
     if image is None or image.size > 2 * 1024 * 1024:
@@ -243,13 +245,6 @@ def upload_screenshot(request, token: str):
         raise HttpError(400, "screenshot must be PNG")
     image.seek(0)
 
-    screen_content = (
-        ScreenContent.objects.filter(screen=screen, content=content)
-        .order_by("pk")
-        .first()
-    )
-    if screen_content is None:
-        raise HttpError(404, "content is not assigned to screen")
     if (
         screen_content.screenshot_captured_at is not None
         and captured_at <= screen_content.screenshot_captured_at
@@ -262,7 +257,7 @@ def upload_screenshot(request, token: str):
         "error_summary", ""
     )[:2000]
     screen_content.screenshot_image.save(
-        f"{screen.pk}/{content.pk}.png",
+        f"{screen.pk}/{screen_content.pk}.png",
         image,
         save=False,
     )
