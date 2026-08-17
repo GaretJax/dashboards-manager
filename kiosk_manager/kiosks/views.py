@@ -103,7 +103,7 @@ def content_content(request, token, content_id):
         Content.objects.filter(
             playlist_entries__screen__public_token=token,
             playlist_entries__screen__enabled=True,
-        ),
+        ).distinct(),
         pk=content_id,
     )
     if content.html:

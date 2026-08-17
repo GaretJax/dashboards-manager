@@ -257,7 +257,8 @@ def test_html_content_endpoint_returns_uploaded_file(
     settings.MEDIA_ROOT = tmp_path
     screen = Screen.objects.create(name="Lobby")
     content = Content.objects.create(html=HTML_CONTENT)
-    ScreenContent.objects.create(screen=screen, content=content)
+    ScreenContent.objects.create(screen=screen, content=content, order=1)
+    ScreenContent.objects.create(screen=screen, content=content, order=2)
 
     response = client.get(
         reverse(
@@ -304,7 +305,8 @@ def test_image_content_endpoint_renders_centered_media_page(
             "dashboard.png", b"image", content_type="image/png"
         ),
     )
-    ScreenContent.objects.create(screen=screen, content=content)
+    ScreenContent.objects.create(screen=screen, content=content, order=1)
+    ScreenContent.objects.create(screen=screen, content=content, order=2)
 
     response = client.get(
         reverse(
@@ -390,7 +392,8 @@ def test_html_content_endpoint_hides_disabled_screen(
 def test_runtime_status_api_persists_latest_snapshot(client):
     screen = Screen.objects.create(name="Lobby")
     content = Content.objects.create(url="https://example.com")
-    ScreenContent.objects.create(screen=screen, content=content)
+    ScreenContent.objects.create(screen=screen, content=content, order=1)
+    ScreenContent.objects.create(screen=screen, content=content, order=2)
 
     response = client.post(
         f"/api/screens/{screen.public_token}/status",
@@ -421,6 +424,7 @@ def test_runtime_status_api_persists_latest_snapshot(client):
     screen.refresh_from_db()
     assert screen.status_agent_version == "1.2.3"
     assert screen.status_current_content_id == content.pk
+    assert screen.status_uptime_seconds == 42
     assert screen.status_last_check_in is not None
 
 
@@ -431,7 +435,8 @@ def test_screenshot_api_keeps_newest_screen_content_image(
     settings.MEDIA_ROOT = tmp_path
     screen = Screen.objects.create(name="Lobby")
     content = Content.objects.create(url="https://example.com")
-    ScreenContent.objects.create(screen=screen, content=content)
+    ScreenContent.objects.create(screen=screen, content=content, order=1)
+    ScreenContent.objects.create(screen=screen, content=content, order=2)
     png = b"\x89PNG\r\n\x1a\nfirst"
 
     response = client.post(
@@ -461,7 +466,10 @@ def test_screenshot_api_keeps_newest_screen_content_image(
     )
     assert response.json() == {"stored": False}
 
-    screen_content = ScreenContent.objects.get(screen=screen, content=content)
+    screen_content = ScreenContent.objects.filter(
+        screen=screen, content=content
+    ).order_by("pk").first()
+    assert screen_content is not None
     assert screen_content.screenshot_health_state == "healthy"
     assert screen_content.screenshot_image.read() == png
 

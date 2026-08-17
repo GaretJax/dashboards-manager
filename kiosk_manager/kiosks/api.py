@@ -157,7 +157,9 @@ def report_runtime_status(
         current_content = None
     else:
         current_content = get_object_or_404(
-            Content.objects.filter(playlist_entries__screen=screen),
+            Content.objects.filter(
+                playlist_entries__screen=screen
+            ).distinct(),
             pk=payload.current_content_id,
         )
 
@@ -227,7 +229,7 @@ def upload_screenshot(request, token: str):
     if health_state not in valid_health_states:
         raise HttpError(400, "invalid health_state")
     content = get_object_or_404(
-        Content.objects.filter(playlist_entries__screen=screen),
+        Content.objects.filter(playlist_entries__screen=screen).distinct(),
         pk=content_id,
     )
     image = request.FILES.get("image")
@@ -297,7 +299,7 @@ def report_events(request, token: str, payload: EventBatchInput):
         for content in Content.objects.filter(
             playlist_entries__screen=screen,
             pk__in=content_ids,
-        )
+        ).distinct()
     }
     if set(content_map) != content_ids:
         raise HttpError(400, "event content is not linked to screen")
